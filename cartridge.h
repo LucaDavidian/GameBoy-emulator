@@ -2,7 +2,7 @@
 
 typedef struct Cartridge
 {
-    uint8_t data[0x8000];  // 32 KB cartridge ROM address space 0x0000 - 0x7FFF
+    uint8_t *data;  // 32 KB cartridge ROM address space 0x0000 - 0x7FFF
     char title[0x10];
     uint8_t mbc;
     uint8_t ROM_size;

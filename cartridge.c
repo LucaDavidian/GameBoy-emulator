@@ -1,6 +1,7 @@
 #include "cartridge.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 int cartridge_load(Cartridge *cartridge, const char *rom_name)
 {
@@ -23,6 +24,7 @@ int cartridge_load(Cartridge *cartridge, const char *rom_name)
     fread(&cartridge->RAM_size, 1, 1, rom);
 
     fseek(rom, 0, SEEK_SET);
+    cartridge->data = (uint8_t*)malloc(32 * 1024 << cartridge->ROM_size);
     fread(cartridge->data, 32 * 1024 << cartridge->ROM_size, 1, rom);
 
     return 1;

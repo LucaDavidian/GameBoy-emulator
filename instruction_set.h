@@ -18,6 +18,7 @@ typedef struct Instruction
 
 extern Instruction instruction_table[];
 extern Instruction extended_instruction_table[];
+extern Instruction interrupt;
 
 /******** Sharp LR35902 instruction set ********/
   

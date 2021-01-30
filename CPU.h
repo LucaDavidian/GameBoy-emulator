@@ -55,10 +55,17 @@ typedef struct CPU
     struct Instruction *current_instruction;   // instruction being executed
     uint8_t current_machine_cycle;             // executing instruction's current machine cycle
     
+    int halt_mode;
+
+    int EI;   // EI instruction executed, interrupts enabled after the following instruction
     int IME;  // Interrupt Master Enable flag
 
     uint8_t bootROM[0x100];   // bootstrap ROM 0x00 - 0xFF
     int boot;                 // bootstrap ROM enabled
+
+    uint16_t interrupt_vector;
+
+    uint64_t total_machine_cycles;
     
 } CPU;
 
@@ -67,10 +74,7 @@ extern CPU cpu;
 int CPU_init(CPU *cpu);
 void CPU_Reset(CPU *cpu);
 void CPU_execute_machine_cycle(CPU *cpu);
-void CPU_BUSRQ(CPU *cpu);  // sensed at end of machine cycle
-void CPU_NMI(CPU *cpu);    // sensed at end of instruction
-void CPU_INT(CPU *cpu);    // sensed at end of instruction
-
+int CPU_check_interrupts(CPU *cpu);    // sensed at end of instruction
 void CPU_log(CPU *cpu);
 
 #endif  // __CPU_H__

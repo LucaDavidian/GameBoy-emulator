@@ -3,25 +3,9 @@
 
 #include <stdint.h>
 
-typedef struct Serial
-{
-    uint8_t SB;  // serial transfer data
-
-    union
-    {
-        struct
-        {
-            uint8_t clock_select : 1;
-            uint8_t : 6;
-            uint8_t transfer_start : 1;
-        } bits;
-
-        uint8_t reg;
-    } SC;  // serial transfer control
-} Serial;
-
-extern Serial serial;
-
-void serial_write(uint8_t data);
+void serial_write_SB(uint8_t data);
+void serial_write_SC(uint8_t data);
+uint8_t serial_read_SB(void);
+uint8_t serial_read_SC(void);
 
 #endif
