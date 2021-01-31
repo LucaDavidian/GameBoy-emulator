@@ -1,56 +1,25 @@
 #include <stdint.h>
 #include "bus.h"
 #include "CPU.h"
+#include "PPU.h"
 #include "cartridge.h"
 #include "serial.h"
 #include "timer.h"
-#include "PPU.h"
 
-uint8_t WRAM[0x2000];
-uint8_t VRAM[0x2000];
-uint8_t OAM[0x80 + 0x20];
-uint8_t HRAM[0x80];
-uint8_t IE;
-uint8_t IF;
-Cartridge *cartridge;
+static uint8_t WRAM[0x2000];
+static uint8_t VRAM[0x2000];
+static uint8_t OAM[0x80 + 0x20];
+static uint8_t HRAM[0x80];
+static uint8_t IE;
+static uint8_t IF;
+static Cartridge *cartridge;
 
 void bus_reset(void)
 {
-    /*[$FF05] = $00; TIMA
-        [$FF06] = $00; TMA
-        [$FF07] = $00; TAC
-        [$FF10] = $80; NR10
-        [$FF11] = $BF; NR11
-        [$FF12] = $F3; NR12
-        [$FF14] = $BF; NR14
-        [$FF16] = $3F; NR21
-        [$FF17] = $00; NR22
-        [$FF19] = $BF; NR24
-        [$FF1A] = $7F; NR30
-        [$FF1B] = $FF; NR31
-        [$FF1C] = $9F; NR32
-        [$FF1E] = $BF; NR34
-        [$FF20] = $FF; NR41
-        [$FF21] = $00; NR42
-        [$FF22] = $00; NR43
-        [$FF23] = $BF; NR44
-        [$FF24] = $77; NR50
-        [$FF25] = $F3; NR51
-        [$FF26] = $F1 - GB, $F0 - SGB; NR52
-        [$FF40] = $91; LCDC
-        [$FF42] = $00; SCY
-        [$FF43] = $00; SCX
-        [$FF45] = $00; LYC
-        [$FF47] = $FC; BGP
-        [$FF48] = $FF; OBP0
-        [$FF49] = $FF; OBP1
-        [$FF4A] = $00; WY
-        [$FF4B] = $00; WX
-        [$FFFF] = $00; IE*/
+
 }
 
-#include <stdio.h>
-
+/**** bus interface ****/
 uint8_t bus_read(uint16_t address)
 {
     if (address >= 0x0000 && address <= 0x7FFF)             // 32 KB cartridge ROM 
@@ -104,8 +73,8 @@ uint8_t bus_read(uint16_t address)
             return HRAM[address & 0x007F];
         else if (address == INT_ENABLE_REG)                 // IE Interrupt Enable Register
             return IE;
-        //else                                                // invalid memory access 
-        //    return printf("invalid memory access: 0x%x\n", address), 0;
+        else                                                // invalid memory access 
+            ;
 }
 
 void bus_write(uint16_t address, uint8_t data)
@@ -156,14 +125,30 @@ void bus_write(uint16_t address, uint8_t data)
             else if (address == 0xFF4B)        // ppu WX
                 PPU_write_WX(data);
             else if (address == INT_FLAG_REG)  // IF Interrupt Flag register
-                IF = data; 
+                IF = data;
         }
-		else if (address >= 0xFF80 && address <= 0xFFFE)    // HRAM
-			HRAM[address & 0x007F] = data;
-		else if (address == INT_ENABLE_REG)                 // IE Interrupt Enable Register
-			IE = data;
-		//else                                                // invalid memory access 
-  //          printf("invalid memory access: 0x%x\n", address);
+        else if (address >= 0xFF80 && address <= 0xFFFE)    // HRAM
+            HRAM[address & 0x007F] = data;
+        else if (address == INT_ENABLE_REG)                 // IE Interrupt Enable Register
+            IE = data;
+        else                                                // invalid memory access 
+            ;
+}
+
+/**** interrupts ****/
+void enable_int(enum Int_Flag interrupt)
+{
+    IE |= interrupt;
+}
+
+void disable_int(enum Int_Flag interrupt)
+{
+    IE &= ~interrupt;
+}
+
+int check_int_enabled(enum Int_Flag interrupt)
+{
+    return IE & interrupt;
 }
 
 void set_int_flag(enum Int_Flag interrupt)
@@ -181,20 +166,7 @@ int check_int_flag(enum Int_Flag interrupt)
     return IF & interrupt;
 }
 
-void enable_int(enum Int_Flag interrupt)
-{
-    IE |= interrupt;
-}
 
-void disable_int(enum Int_Flag interrupt)
-{
-    IE &= ~interrupt;
-}
-
-int check_int_enabled(enum Int_Flag interrupt)
-{
-    return IE & interrupt;
-}
 
 void insert_cartridge(struct Cartridge *c)
 {

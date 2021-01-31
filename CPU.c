@@ -29,8 +29,8 @@ int CPU_init(CPU *cpu)
 
 void CPU_Reset(CPU *cpu)
 {
-    //cpu->PC = 0x0000;
-    cpu->PC = 0x0100;
+    cpu->PC = 0x0000;
+    //cpu->PC = 0x0100;
 
     cpu->A = 0x01;
     cpu->F.reg = 0xB0;
@@ -44,8 +44,8 @@ void CPU_Reset(CPU *cpu)
 
     cpu->SP = 0xFFFE;
 
-    //cpu->boot = 1;  // enable bootstrap ROM
-    cpu->boot = 0;    // disable bootstrap ROM
+    cpu->boot = 1;  // enable bootstrap ROM
+    //cpu->boot = 0;    // disable bootstrap ROM
 
     cpu->IME = 0;
     cpu->EI = 0; 
@@ -61,6 +61,8 @@ void CPU_Reset(CPU *cpu)
     cpu->instruction_register = cpu->data_bus;                 
 
     cpu->current_instruction = &instruction_table[cpu->instruction_register];
+
+    //CPU_log(cpu);
 }
 
 #define INT_VECTOR_VBLANK    0x0040

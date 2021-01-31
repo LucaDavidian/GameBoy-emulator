@@ -4,7 +4,11 @@
 #include <stdint.h>
 
 void PPU_init(void);
+void PPU_deinit(void);
+
 void PPU_clock(void);
+
+void PPU_render(void);
 
 void PPU_write_LCDC(uint8_t value);
 void PPU_write_STAT(uint8_t value);
