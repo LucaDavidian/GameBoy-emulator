@@ -30,4 +30,7 @@ uint8_t PPU_read_LYC(void);
 uint8_t PPU_read_WY(void);
 uint8_t PPU_read_WX(void);
 
+void write_VRAM(uint16_t address, uint8_t data);
+uint8_t read_VRAM(uint16_t address);
+
 #endif  // __PPU_H_

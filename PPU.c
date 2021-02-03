@@ -13,10 +13,10 @@
 #define STAT_MODE2_INTERRUPT_OAM_BIT     0x20
 #define STAT_LYC_INTERRUPT_BIT           0x40
 
-#define SCREEN_MODE0                        0
-#define SCREEN_MODE1                        1
-#define SCREEN_MODE2                        2
-#define SCREEN_MODE3                        3
+#define SCREEN_MODE0                        0  // in horizontal blanking period
+#define SCREEN_MODE1                        1  // in vertical blanking period
+#define SCREEN_MODE2                        2  // during OAM search
+#define SCREEN_MODE3                        3  // during pixel transfer
 
 /**** display resolution ****/
 #define DISPLAY_WIDTH                     160
@@ -86,22 +86,46 @@ struct PPU
 	uint8_t WY;       // window y-coordinate (R/W)   - 0xFF4A
 	uint8_t WX;       // window x-coordinate (R/W)   - 0xFF4B
 
-	uint16_t cycle;   // @ 4.194304 MHz
-	uint8_t pixels_pushed;
+	uint16_t cycle;       // @ 4.194304 MHz
+	uint8_t dot_clock;    // LCD clock
+	int dot_clock_enabled;
+	uint8_t scrollX;
 
+	uint16_t tile_map_address;
 	uint8_t tile_number;
 	uint16_t tile_data_address;
 	uint8_t tile_data_low;
 	uint8_t tile_data_high;
+	int fetched;
 
-	int pixel_FIFO_stop;
 	uint16_t pixel_FIFO_high;
 	uint16_t pixel_FIFO_low;
+	uint8_t pixel_FIFO_count;
 
 	PPU_State state;
 };
 
 static PPU ppu;
+static uint8_t VRAM[0x2000];
+
+void write_VRAM(uint16_t address, uint8_t data)
+{
+	address &= 0x1FFF;
+
+	//if (ppu.STAT.bits.mode_flag != SCREEN_MODE3)
+		VRAM[address] = data;
+}
+
+uint8_t read_VRAM(uint16_t address)
+{
+	address &= 0x1FFF;
+
+	if (ppu.STAT.bits.mode_flag != SCREEN_MODE3)
+		return VRAM[address];
+	else
+		return 0xFF;
+}
+
 static SDL_Window *window;
 static SDL_Renderer *renderer;
 
@@ -170,13 +194,11 @@ void PPU_init(void)
 	}
 
 	// initialize PPU
-	ppu.cycle = 0;
-	ppu.pixels_pushed = 0;
 	ppu.LY = 0x00;
 
-	ppu.pixel_FIFO_stop = 0;
-	ppu.pixel_FIFO_high = 0;
-	ppu.pixel_FIFO_low = 0;
+	ppu.cycle = 0;
+
+	ppu.state = PPU_STATE_VBLANK;
 }
 
 void PPU_deinit(void)
@@ -185,6 +207,8 @@ void PPU_deinit(void)
 	SDL_DestroyRenderer(renderer);
 	SDL_DestroyWindow(window);
 }
+
+#include <limits.h>
 
 void render_VRAM(void)
 {
@@ -196,8 +220,8 @@ void render_VRAM(void)
 
 			for (int j = 0; j < 16; j += 2)
 			{
-				uint8_t tile_data_low = bus_read(tile_base_adddress + j);
-				uint8_t tile_data_high = bus_read(tile_base_adddress + j + 1);
+				uint8_t tile_data_low = VRAM[tile_base_adddress + j & 0x1FFF];
+				uint8_t tile_data_high = VRAM[tile_base_adddress + j + 1 & 0x1FFF];
 
 				for (int k = 0; k < 8; k++)
 				{
@@ -220,19 +244,22 @@ void render_VRAM(void)
 	for (int i = 0; i < 32; i++)
 		for (int j = 0; j < 32; j++)
 		{
-			uint8_t tile_number = bus_read(background_tile_map_base + j + i * 32);
-			uint16_t tile_data_address = background_tile_data_base + tile_number * 16;
-			if (background_tile_data_base == BG_TILE_DATA1)
-			{ 
-				tile_data_address += 0x800;   // TODO: wrong! * 16 
-				if (tile_data_address >= 0x97FF)
-					tile_data_address -= 0x1000;
-			}
+			uint8_t tile_number = VRAM[background_tile_map_base + j + i * 32 & 0x1FFF];
+			
+			uint16_t tile_data_address;
+
+			if (background_tile_data_base == BG_TILE_DATA0)
+				tile_data_address = background_tile_data_base + tile_number * 16;
+			else    // background_tile_data_base == BG_TILE_DATA1
+				if (tile_number & 0x80)
+					tile_data_address = background_tile_data_base + 0x0800 - (UINT8_MAX + 1 - tile_number) * 16;
+				else
+					tile_data_address = background_tile_data_base + 0x0800 + tile_number * 16;
 
 			for (int k = 0; k < 16; k += 2)
 			{
-				uint8_t tile_data_low = bus_read(tile_data_address + k);
-				uint8_t tile_data_high = bus_read(tile_data_address + k + 1);
+				uint8_t tile_data_low = VRAM[tile_data_address + k & 0x1FFF];
+				uint8_t tile_data_high = VRAM[tile_data_address + k + 1 & 0x1FFF];
 
 				for (int l = 0; l < 8; l++)
 				{
@@ -253,19 +280,22 @@ void render_VRAM(void)
 	for (int i = 0; i < 32; i++)
 		for (int j = 0; j < 32; j++)
 		{
-			uint8_t tile_number = bus_read(window_tile_map_base + j + i * 32);
-			uint16_t tile_data_address = window_tile_data_base + tile_number * 16;
-			if (window_tile_data_base == BG_TILE_DATA1)
-			{  
-				tile_data_address += 0x800;   // TODO: wrong! * 16 
-				if (tile_data_address >= 0x97FF)     
-					tile_data_address -= 0x1000;
-			}
+			uint8_t tile_number = VRAM[window_tile_map_base + j + i * 32 & 0x1FFF];
+			
+			uint16_t tile_data_address;
+
+			if (window_tile_data_base == BG_TILE_DATA0)
+				tile_data_address = background_tile_data_base + tile_number * 16;
+			else    // window_tile_data_base == BG_TILE_DATA1
+				if (tile_number & 0x80)
+					tile_data_address = background_tile_data_base + 0x0800 - (UINT8_MAX + 1 - tile_number) * 16;
+				else
+					tile_data_address = window_tile_data_base + 0x0800 + tile_number * 16;
 
 			for (int k = 0; k < 16; k += 2)
 			{
-				uint8_t tile_data_low = bus_read(tile_data_address + k);
-				uint8_t tile_data_high = bus_read(tile_data_address + k + 1);
+				uint8_t tile_data_low = VRAM[tile_data_address + k & 0x1FFF];
+				uint8_t tile_data_high = VRAM[tile_data_address + k + 1 & 0x1FFF];
 
 				for (int l = 0; l < 8; l++)
 				{
@@ -301,66 +331,96 @@ void PPU_clock(void)
 			break;
 		case PPU_STATE_PIXEL_TRANSFER:  // mode 3: pixel transfer
 			if (ppu.cycle == OAM_CLOCKS)
+			{
 				ppu.STAT.bits.mode_flag = ppu.STAT.bits.mode_flag & ~STAT_MODE_BITS | SCREEN_MODE3;
 
-			uint8_t pixelX = ppu.pixels_pushed;
-			uint8_t pixelY = ppu.LY;
-			
-			switch (ppu.cycle % 8)  // fetcher
-			{
-				case 0:
-					break; // idle
-				case 1:    // push 8 pixels to FIFO
-					ppu.pixel_FIFO_low = ppu.pixel_FIFO_low & 0x00FF | (uint16_t)ppu.tile_data_low << 8;
-					ppu.pixel_FIFO_high = ppu.pixel_FIFO_high & 0x00FF | (uint16_t)ppu.tile_data_high << 8;
-					ppu.pixel_FIFO_stop = 0;
-					break;
-				case 2:    // read tile number (32 x 32 tile map)
+				// fetch first tile address
+				uint16_t tile_map_base = ppu.LCDC.bits.BG_tile_map ? BG_TILE_MAP1 : BG_TILE_MAP0;
+				
+				//uint8_t tileX = ppu.SCX / 8 % 32;
+				//uint8_t tileY = (ppu.LY + ppu.SCY) / 8 % 32;
+				//ppu.tile_map_address = tile_map_base + tileX + tileY * 32;
+
+				uint8_t tileX = ppu.SCX >> 3 & 0x1F;               // coarse x
+				uint8_t tileY = (ppu.SCY + ppu.LY) >> 3 & 0x1F;    // coarse y
+				ppu.tile_map_address = tile_map_base | ppu.LCDC.bits.BG_tile_map << 10 | tileY << 5 | tileX;  // tile address: 1001.1NYY.YYYX.XXXX
+
+				ppu.dot_clock = 0;
+				ppu.dot_clock_enabled = 0;
+				ppu.scrollX = ppu.SCX;
+				ppu.fetched = 0;
+				ppu.pixel_FIFO_count = 0;
+				ppu.pixel_FIFO_low = 0x0000;
+				ppu.pixel_FIFO_high = 0x0000;
+			}
+
+			/**** fetcher ****/
+			if (ppu.cycle >= 87)  // 6 cycles tile fetch and discard
+				switch (ppu.cycle % 8)
 				{
-					uint16_t tile_map_base = ppu.LCDC.bits.BG_tile_map ? BG_TILE_MAP1 : BG_TILE_MAP0;
-					uint8_t tileX = (pixelX + ppu.SCX) / 8 % 32;  // unsigned overflow - wrap around
-					uint8_t tileY = (pixelY /*+ ppu.SCY*/) / 8 % 32;  // unsigned overflow - wrap around
-					uint16_t tile_map_address = tile_map_base + tileX + tileY * 32;
-					ppu.tile_number = bus_read(tile_map_address);
-				}
-					break;
-				case 4:    // read tile data low 
-				{
-					uint16_t tile_data_base = ppu.LCDC.bits.BG_and_window_tileset ? BG_TILE_DATA0 : BG_TILE_DATA1;
-					ppu.tile_data_address = tile_data_base + ppu.tile_number * 16;
-					if (tile_data_base == BG_TILE_DATA1)
+					case 0:  // step 1: fetch tile data address and load FIFO (increment tile map address)				
+						ppu.tile_number = VRAM[ppu.tile_map_address & 0x1FFF];
+						uint16_t next_address = ppu.tile_map_address + 1 & 0x001F;
+						ppu.tile_map_address = ppu.tile_map_address & 0xFFE0 | next_address;
+
+						if (ppu.fetched)
+						{
+							ppu.pixel_FIFO_low = ppu.pixel_FIFO_low & 0xFF00 | ppu.tile_data_low;
+							ppu.pixel_FIFO_high = ppu.pixel_FIFO_high & 0xFF00 | ppu.tile_data_high;
+							ppu.pixel_FIFO_count += 8;
+						}
+
+						break;
+					case 2:  // step 2: fetch tile data low bit plane
 					{
-						ppu.tile_data_address += 0x0800;  // TODO: wrong! * 16 
-						if (ppu.tile_data_address > 0x97FF)
-							ppu.tile_data_address -= 0x1000;
+						uint16_t tile_data_base = ppu.LCDC.bits.BG_and_window_tileset ? BG_TILE_DATA0 : BG_TILE_DATA1;
+
+						if (tile_data_base == BG_TILE_DATA0)
+							ppu.tile_data_address = tile_data_base + ppu.tile_number * 16 + (ppu.SCY + ppu.LY) % 8 * 2;
+						else    // tile_data_base == BG_TILE_DATA1
+							if (ppu.tile_number & 0x80)
+								ppu.tile_data_address = tile_data_base + 0x0800 - (UINT8_MAX + 1 - ppu.tile_number) * 16 + (ppu.SCY + ppu.LY) % 8 * 2;
+							else
+								ppu.tile_data_address = tile_data_base + 0x0800 + ppu.tile_number * 16 + (ppu.SCY + ppu.LY) % 8 * 2;
+
+						ppu.tile_data_low = VRAM[ppu.tile_data_address & 0x1FFF];
 					}
-					ppu.tile_data_low = bus_read(ppu.tile_data_address);
+						break;
+					case 4:  // step 3: fetch tile data high bit plane						
+						ppu.tile_data_high = VRAM[ppu.tile_data_address + 1 & 0x1FFF];
+						ppu.fetched = 1;
+						break;
+					case 6:  // step 4: sprite window (idle)
+						break;
 				}
-					break;
-				case 6:    // read tile data high
-					ppu.tile_data_address++;
-					ppu.tile_data_high = bus_read(ppu.tile_data_address);
-					break;
+
+			/**** pixel FIFO ****/
+			if (ppu.pixel_FIFO_count > 8)
+			{
+				if (ppu.scrollX == 0)
+				{
+					uint8_t pixel_palette = ppu.pixel_FIFO_low >> 15 & 0x0001 | (ppu.pixel_FIFO_high >> 15 & 0x0001) << 1;
+					uint8_t pixel_color = ppu.BGP >> pixel_palette * 2 & 0x03;
+					*(uint32_t*)(buffer + ppu.dot_clock * 4 + ppu.LY * DISPLAY_WIDTH * 4) = palette[pixel_color];
+
+					ppu.dot_clock++;
+				}
+				else
+					ppu.scrollX--;
+
+				ppu.pixel_FIFO_count--;
+			}
+
+			ppu.pixel_FIFO_low <<= 1;
+			ppu.pixel_FIFO_high <<= 1;
+
+			if (ppu.dot_clock == DISPLAY_WIDTH)
+			{
+				ppu.dot_clock = 0;
+				ppu.state = PPU_STATE_HBLANK;
 			}
 
 			ppu.cycle++;
-
-			if (!ppu.pixel_FIFO_stop)
-			{
-				uint8_t pixel_palette = ppu.pixel_FIFO_low & 0x01 | (ppu.pixel_FIFO_high & 0x01) << 1;
-				uint8_t pixel_color = ppu.BGP >> pixel_palette * 2 & 0x03;
-				*(uint32_t*)(buffer + ppu.pixels_pushed * 4 + ppu.LY * DISPLAY_WIDTH * 4) = palette[pixel_color];
-
-				ppu.pixel_FIFO_low >>= 1;
-				ppu.pixel_FIFO_high >>= 1;
-				ppu.pixels_pushed++;
-			}
-
-			if (ppu.pixels_pushed == DISPLAY_WIDTH)
-			{
-				ppu.pixels_pushed = 0;
-				ppu.state = PPU_STATE_HBLANK;
-			}
 
 			break;
 		case PPU_STATE_HBLANK:  // mode 0: in HBLANK
@@ -373,12 +433,6 @@ void PPU_clock(void)
 			}
 
 			ppu.cycle++;
-
-			if (ppu.cycle == SCANLINE_CLOCKS)
-			{
-				render_VRAM();
-				PPU_render();
-			}
 
 			if (ppu.cycle == SCANLINE_CLOCKS) 
 			{
@@ -405,10 +459,17 @@ void PPU_clock(void)
 		case PPU_STATE_VBLANK:  // mode 1: in VBLANK
 			if (ppu.cycle == 0)
 			{
+
 				ppu.STAT.bits.mode_flag = ppu.STAT.bits.mode_flag & ~STAT_MODE_BITS | SCREEN_MODE1;
 
 				if (check_int_enabled(INT_VBLANK) && ppu.STAT.bits.mode1_VBLANK_interrupt)
-					set_int_flag(INT_VBLANK);  			
+					set_int_flag(INT_VBLANK);  	
+
+				// render frame
+				render_VRAM();
+
+				if (ppu.LCDC.bits.LCD_power)
+					PPU_render();
 			}
 
 			ppu.cycle++;
@@ -449,11 +510,11 @@ void PPU_render(void)
 	SDL_RenderCopy(renderer, display, NULL, &display_rect);
 
 	SDL_UpdateTexture(background_map, NULL, (const void*)background_buffer, 256 * 4);
-	SDL_Rect background_map_rect = { 10 + DISPLAY_WIDTH * 4 + 10, 10, 256 * 1.1, 256 * 1.1};
+	SDL_Rect background_map_rect = { 10 + DISPLAY_WIDTH * 4 + 10, 10, 256 * 1, 256 * 1};
 	SDL_RenderCopy(renderer, background_map, NULL, &background_map_rect);
 
 	SDL_UpdateTexture(window_map, NULL, (const void*)window_buffer, 256 * 4);
-	SDL_Rect window_map_rect = { 10 + DISPLAY_WIDTH * 4 + 10, 10 + 256 * 1.1 + 10, 256 * 1.1 , 256 * 1.1};
+	SDL_Rect window_map_rect = { 10 + DISPLAY_WIDTH * 4 + 10, 10 + 256 * 1.1 + 10, 256 * 1 , 256 * 1};
 	SDL_RenderCopy(renderer, window_map, NULL, &window_map_rect);
 
 	SDL_UpdateTexture(tile_data, NULL, (const void*)tile_buffer, 16 * 8 * 4);

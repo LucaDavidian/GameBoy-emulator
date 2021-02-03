@@ -23,9 +23,4 @@ void set_int_flag(enum Int_Flag interrupt);
 void clear_int_flag(enum Int_Flag interrupt);
 int check_int_flag(enum Int_Flag interrupt);
 
-
-
-struct Cartridge;
-void insert_cartridge(struct Cartridge *);
-
 #endif  // __BUS_H__

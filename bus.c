@@ -3,16 +3,15 @@
 #include "CPU.h"
 #include "PPU.h"
 #include "cartridge.h"
+#include "joypad.h"
 #include "serial.h"
 #include "timer.h"
 
 static uint8_t WRAM[0x2000];
-static uint8_t VRAM[0x2000];
 static uint8_t OAM[0x80 + 0x20];
 static uint8_t HRAM[0x80];
 static uint8_t IE;
 static uint8_t IF;
-static Cartridge *cartridge;
 
 void bus_reset(void)
 {
@@ -26,9 +25,9 @@ uint8_t bus_read(uint16_t address)
         if (address <= 0x00FF && cpu.boot)
             return cpu.bootROM[address & 0xFF];                   // 256 bytes bootstrap ROM mapped to 0x00 - 0xFF 
         else
-            return cartridge_read(cartridge, address);            // bootstrap ROM disabled or address >= 0x100
+            return cartridge_read(address);                       // bootstrap ROM disabled or address >= 0x100
     else if (address >= 0x8000 && address <= 0x9FFF)        // 8 KB VRAM
-        return VRAM[address & 0x1FFF];
+        return read_VRAM(address);
     else if (address >= 0xA000 && address <= 0xBFFF)        // 8 KB external RAM
         ;
     else if (address >= 0xC000 && address <= 0xDFFF)        // 8 KB work RAM
@@ -38,7 +37,9 @@ uint8_t bus_read(uint16_t address)
             return OAM[address & 0x00FF];  
         else if (address >= 0xFF00 && address <= 0xFF7F)    // IO memory mapped devices (128 bytes)
         {
-            if (address == 0xFF01)             // serial SB
+            if (address == 0xFF00)             // joypdad P1/JOY
+                return joypad_read();
+            else if (address == 0xFF01)        // serial SB
                 return serial_read_SB();
             else if (address == 0xFF02)        // serial SC
                 return serial_read_SC();
@@ -74,7 +75,10 @@ uint8_t bus_read(uint16_t address)
         else if (address == INT_ENABLE_REG)                 // IE Interrupt Enable Register
             return IE;
         else                                                // invalid memory access 
-            ;
+        {
+            printf("invalid memory access - read from 0x%x\n", address);
+            return 0xFF;
+        }
 }
 
 void bus_write(uint16_t address, uint8_t data)
@@ -82,7 +86,7 @@ void bus_write(uint16_t address, uint8_t data)
     if (address >= 0x0000 && address <= 0x7FFF)             // 32 KB cartridge ROM 
         ;
     else if (address >= 0x8000 && address <= 0x9FFF)        // 8 KB VRAM
-        VRAM[address & 0x1FFF] = data;
+        write_VRAM(address, data);
     else if (address >= 0xA000 && address <= 0xBFFF)        // 8 KB external RAM
         ;
     else if (address >= 0xC000 && address <= 0xDFFF)        // 8 KB work RAM
@@ -124,6 +128,11 @@ void bus_write(uint16_t address, uint8_t data)
                 PPU_write_WY(data);
             else if (address == 0xFF4B)        // ppu WX
                 PPU_write_WX(data);
+            else if (address == 0xFF50)
+            {
+                if (data == 0x01)   // writing 1 to $FF50 disables bootstrap ROM
+                    cpu.boot = 0;
+            }
             else if (address == INT_FLAG_REG)  // IF Interrupt Flag register
                 IF = data;
         }
@@ -132,7 +141,7 @@ void bus_write(uint16_t address, uint8_t data)
         else if (address == INT_ENABLE_REG)                 // IE Interrupt Enable Register
             IE = data;
         else                                                // invalid memory access 
-            ;
+            printf("invalid memory access - write 0x%x to 0x%x\n", data, address);
 }
 
 /**** interrupts ****/
@@ -164,11 +173,4 @@ void clear_int_flag(enum Int_Flag interrupt)
 int check_int_flag(enum Int_Flag interrupt)
 {
     return IF & interrupt;
-}
-
-
-
-void insert_cartridge(struct Cartridge *c)
-{
-    cartridge = c;
 }

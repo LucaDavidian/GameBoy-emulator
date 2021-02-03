@@ -3270,3 +3270,4 @@ void INT(CPU *cpu)
 }
 
 Instruction interrupt = { "INT", 0x00, 0, 5, &INT };
+Instruction halt_exit = { "HALT_EXIT", 0x00, 0, 1, &NOP };

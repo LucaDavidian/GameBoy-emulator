@@ -3,7 +3,9 @@
 
 #include <stdint.h>
 
-typedef struct CPU
+typedef struct CPU CPU;
+
+struct CPU
 {
     //data bus
     uint8_t data_bus;
@@ -24,7 +26,7 @@ typedef struct CPU
             uint8_t H : 1;      // half-carry flag
             uint8_t N : 1;      // add/subtract flag
             uint8_t Z : 1;      // zero flag
-        } bits;  
+        } bits;
 
         uint8_t reg;
     } F;
@@ -32,10 +34,10 @@ typedef struct CPU
     // general purpose registers
     uint8_t B;
     uint8_t C;
-    
+
     uint8_t D;
     uint8_t E;
-    
+
     uint8_t H;
     uint8_t L;
 
@@ -43,7 +45,7 @@ typedef struct CPU
     uint16_t SP;
 
     // program counter/instruction pointer
-    uint16_t PC; 
+    uint16_t PC;
 
     // shadow registers (not exposed to the programmer)
     uint8_t W;
@@ -54,7 +56,7 @@ typedef struct CPU
     uint8_t instruction_register;              // current opcode
     struct Instruction *current_instruction;   // instruction being executed
     uint8_t current_machine_cycle;             // executing instruction's current machine cycle
-    
+
     int halt_mode;
 
     int EI;   // EI instruction executed, interrupts enabled after the following instruction
@@ -66,16 +68,16 @@ typedef struct CPU
     uint16_t interrupt_vector;
 
     uint64_t total_machine_cycles;
-    
-} CPU;
+
+};
 
 extern CPU cpu;
 
-int CPU_init(CPU *cpu);
-void CPU_Reset(CPU *cpu);
-void CPU_execute_machine_cycle(CPU *cpu);
-int CPU_check_interrupts(CPU *cpu);    // sensed at end of instruction
-void CPU_log(CPU *cpu);
+int CPU_init(void);
+void CPU_Reset(void);
+void CPU_execute_machine_cycle(void);
+int CPU_check_interrupts(void);  
+void CPU_log(void);
 
 #endif  // __CPU_H__
 
