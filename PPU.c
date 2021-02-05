@@ -35,11 +35,36 @@
 #define SCANLINE_CLOCKS                         456
 #define VBLANK_SCANLINES                         10
 
+#define MAX_SPRITES_PER_SCANLINE                 10   // max 10 sprites per scanline
+
 uint32_t palette[] = { 0x009BBC0F, 0x008BAC0F, 0x00306230, 0x000F380F };
 
-typedef enum PPU_State { PPU_STATE_OAM_SEARCH = 2, PPU_STATE_PIXEL_TRANSFER = 3, PPU_STATE_HBLANK = 0, PPU_STATE_VBLANK = 1 } PPU_State;
+typedef enum PPU_State 
+{ 
+	PPU_STATE_OAM_SEARCH = 2, 
+	PPU_STATE_PIXEL_TRANSFER = 3, 
+	PPU_STATE_HBLANK = 0, 
+	PPU_STATE_VBLANK = 1 
+} PPU_State;
 
 typedef struct PPU PPU;
+
+typedef enum Fetcher_State
+{
+	FETCHER_STATE_BACKGROUND, FETCHER_STATE_SPRITES
+} Fetcher_State;
+
+typedef enum Fetcher_SubState
+{
+	FETCHER_STATE_BEFORE_FETCH_TILE,
+	FETCHER_STATE_FETCH_TILE, 
+	FETCHER_STATE_BEFORE_READ_TILE_LOW,
+	FETCHER_STATE_READ_TILE_LOW, 
+	FETCHER_STATE_BEFORE_READ_TILE_HIGH,
+	FETCHER_STATE_READ_TILE_HIGH, 
+	FETCHER_STATE_PUSH_TO_FIFO, 
+	FETCHER_STATE_IDLE 
+} Fetcher_Substate;
 
 struct PPU
 {
@@ -48,8 +73,8 @@ struct PPU
 		struct
 		{
 			uint8_t BG_enabled             : 1;    // enable background rendering (0: disabled, 1: enabled)
-			uint8_t sprites_enabled        : 1;    // enable sprite rendering (0: disabled, 1: enabled)
-			uint8_t sprite_size            : 1;    // select sprite size (0: 8x8 px, 1: 8x16 px)
+			uint8_t sprites_enabled        : 1;    // enable sprite_index rendering (0: disabled, 1: enabled)
+			uint8_t sprite_size            : 1;    // select sprite_index size (0: 8x8 px, 1: 8x16 px)
 			uint8_t BG_tile_map            : 1;    // select VRAM area to fetch background tile numbers from (0: 0x9800 - 0x9BFF, 1: 0x9C00 - 0x9FFF) - each area is 1 KB = 32 x 32 tiles 
 			uint8_t BG_and_window_tileset  : 1;    // select VRAM area to fetch background and window tile data from (0: 0x8800 - 0x0x97FF, 1: 0x8000 - 0x8FFF) - each area is 4 KB = 256 16-bytes tiles
 			uint8_t window_enable          : 1;    // enable window rendering
@@ -81,32 +106,70 @@ struct PPU
 	uint8_t LY;       // current scanline (R)        - 0xFF44
 	uint8_t LYC;      // LYC compare (R/W)           - 0xFF45
 	uint8_t BGP;      // background palette data (W) - 0xFF47
-	uint8_t OBJP0;    // sprite palette data 0 (W)   - 0xFF48
-	uint8_t OBJP1;    // sprite palette data 1 (W)   - 0xFF49
+	uint8_t OBJP0;    // sprite_index palette data 0 (W)   - 0xFF48
+	uint8_t OBJP1;    // sprite_index palette data 1 (W)   - 0xFF49
 	uint8_t WY;       // window y-coordinate (R/W)   - 0xFF4A
 	uint8_t WX;       // window x-coordinate (R/W)   - 0xFF4B
 
-	uint16_t cycle;       // @ 4.194304 MHz
-	uint8_t dot_clock;    // LCD clock
-	int dot_clock_enabled;
+	PPU_State state;
+
+	uint16_t cycle;          // @ 4.194304 MHz
+	uint8_t current_pixel;   // current pixel being drawn 
 	uint8_t scrollX;
 
-	uint16_t tile_map_address;
+	Fetcher_State fetcher_state;
+	Fetcher_Substate fetcher_substate;
+	Fetcher_Substate saved_substate;
+
+	uint16_t background_tile_map_address;
+	uint16_t sprite_tile_map_address;
 	uint8_t tile_number;
 	uint16_t tile_data_address;
 	uint8_t tile_data_low;
 	uint8_t tile_data_high;
-	int fetched;
 
-	uint16_t pixel_FIFO_high;
-	uint16_t pixel_FIFO_low;
-	uint8_t pixel_FIFO_count;
+	uint8_t background_shift_register_high;
+	uint8_t background_shift_register_low;
+	uint8_t pixel_FIFO_shift;
+	int pixel_FIFO_empty;
+	int pixel_FIFO_stop;
 
-	PPU_State state;
+	struct Sprite
+	{
+		uint8_t x;
+		uint8_t y;
+		uint8_t tile_number;
+
+		union
+		{
+			struct
+			{
+				uint8_t                  : 4;   
+				uint8_t OAM_palette      : 1;   // OBJ palette select (0: OBJP0, 1: OBJP1)
+				uint8_t horizontal_flip  : 1;   // flip sprite_index horizontally (0: normal, 1: flipped)
+				uint8_t vertical_flip    : 1;   // flip sprite_index vertically (0: normal, 1: flipped)
+				uint8_t priority         : 1;   // background/sprite_index priority (0: sprite_index priority, 1: background priority)
+			} bits;
+			uint8_t reg;
+		} attributes;
+	} Sprite;
+
+	struct Sprite scanline_sprites[MAX_SPRITES_PER_SCANLINE];  
+	uint8_t scanline_sprite_count;       
+
+	uint8_t current_sprite;
+	uint8_t sprite_index;
+
+	uint8_t sprite_tile_data_low;
+	uint8_t sprite_tile_data_high;
+
+	uint8_t sprite_shift_register_high[10];
+	uint8_t sprite_shift_register_low[10];
 };
 
 static PPU ppu;
 static uint8_t VRAM[0x2000];
+static uint8_t OAM[0x80 + 0x20];
 
 void write_VRAM(uint16_t address, uint8_t data)
 {
@@ -124,6 +187,24 @@ uint8_t read_VRAM(uint16_t address)
 		return VRAM[address];
 	else
 		return 0xFF;
+}
+
+void write_OAM(uint16_t address, uint8_t data)
+{
+	address &= 0x00FF;
+
+	//if (ppu.STAT.bits.mode_flag == SCREEN_MODE0 || ppu.STAT.bits.mode_flag == SCREEN_MODE1)
+		OAM[address] = data;
+}
+
+uint8_t read_OAM(uint16_t address)
+{
+	address &= 0x00FF;
+
+	//if (ppu.STAT.bits.mode_flag == SCREEN_MODE0 || ppu.STAT.bits.mode_flag == SCREEN_MODE1)
+		return OAM[address];
+	//else
+	//	return 0xFF;
 }
 
 static SDL_Window *window;
@@ -199,6 +280,8 @@ void PPU_init(void)
 	ppu.cycle = 0;
 
 	ppu.state = PPU_STATE_VBLANK;
+
+	ppu.pixel_FIFO_stop = 0;
 }
 
 void PPU_deinit(void)
@@ -210,126 +293,95 @@ void PPU_deinit(void)
 
 #include <limits.h>
 
-void render_VRAM(void)
-{
-	// render tiles
-	for (int i = 0; i < 24; i++)
-		for (int h = 0; h < 16; h++)
-		{
-			uint16_t tile_base_adddress = VRAM_BASE + (h + i * 16) * 16;
-
-			for (int j = 0; j < 16; j += 2)
-			{
-				uint8_t tile_data_low = VRAM[tile_base_adddress + j & 0x1FFF];
-				uint8_t tile_data_high = VRAM[tile_base_adddress + j + 1 & 0x1FFF];
-
-				for (int k = 0; k < 8; k++)
-				{
-					uint8_t pixel_palette_low = tile_data_low >> 7 - k & 0x01;
-					uint8_t pixel_palette_high = tile_data_high >> 7 - k & 0x01;
-
-					uint8_t pixel_color_index = pixel_palette_low | pixel_palette_high << 1;
-					uint8_t pixel_palette = ppu.BGP >> pixel_color_index * 2 & 0x03;
-					uint32_t pixel_color = palette[pixel_palette];
-
-					*(uint32_t*)(tile_buffer + (h * 8 + k + (i * 8 + j/2) * 16 * 8) * 4) = pixel_color;
-			}
-		}
-	}
-
-	// render background VRAM
-	uint16_t background_tile_map_base = ppu.LCDC.bits.BG_tile_map ? BG_TILE_MAP1 : BG_TILE_MAP0;
-	uint16_t background_tile_data_base = ppu.LCDC.bits.BG_and_window_tileset ? BG_TILE_DATA0 : BG_TILE_DATA1;
-
-	for (int i = 0; i < 32; i++)
-		for (int j = 0; j < 32; j++)
-		{
-			uint8_t tile_number = VRAM[background_tile_map_base + j + i * 32 & 0x1FFF];
-			
-			uint16_t tile_data_address;
-
-			if (background_tile_data_base == BG_TILE_DATA0)
-				tile_data_address = background_tile_data_base + tile_number * 16;
-			else    // background_tile_data_base == BG_TILE_DATA1
-				if (tile_number & 0x80)
-					tile_data_address = background_tile_data_base + 0x0800 - (UINT8_MAX + 1 - tile_number) * 16;
-				else
-					tile_data_address = background_tile_data_base + 0x0800 + tile_number * 16;
-
-			for (int k = 0; k < 16; k += 2)
-			{
-				uint8_t tile_data_low = VRAM[tile_data_address + k & 0x1FFF];
-				uint8_t tile_data_high = VRAM[tile_data_address + k + 1 & 0x1FFF];
-
-				for (int l = 0; l < 8; l++)
-				{
-					uint8_t low_bit = tile_data_low >> 7 - l & 0x01;
-					uint8_t high_bit = tile_data_high >> 7 - l & 0x01;
-					uint8_t pixel_palette = low_bit | high_bit << 1;
-
-					uint8_t pixel_color = ppu.BGP >> pixel_palette * 2 & 0x03;
-					*(uint32_t*)(background_buffer + (j * 8 + l + (i * 8 + k/2) * 32 * 8) * 4) = palette[pixel_color];
-				}
-			}
-		}
-
-	// render window VRAM
-	uint16_t window_tile_map_base = ppu.LCDC.bits.window_tile_map ? BG_TILE_MAP1 : BG_TILE_MAP0;
-	uint16_t window_tile_data_base = ppu.LCDC.bits.BG_and_window_tileset ? BG_TILE_DATA0 : BG_TILE_DATA1;
-
-	for (int i = 0; i < 32; i++)
-		for (int j = 0; j < 32; j++)
-		{
-			uint8_t tile_number = VRAM[window_tile_map_base + j + i * 32 & 0x1FFF];
-			
-			uint16_t tile_data_address;
-
-			if (window_tile_data_base == BG_TILE_DATA0)
-				tile_data_address = background_tile_data_base + tile_number * 16;
-			else    // window_tile_data_base == BG_TILE_DATA1
-				if (tile_number & 0x80)
-					tile_data_address = background_tile_data_base + 0x0800 - (UINT8_MAX + 1 - tile_number) * 16;
-				else
-					tile_data_address = window_tile_data_base + 0x0800 + tile_number * 16;
-
-			for (int k = 0; k < 16; k += 2)
-			{
-				uint8_t tile_data_low = VRAM[tile_data_address + k & 0x1FFF];
-				uint8_t tile_data_high = VRAM[tile_data_address + k + 1 & 0x1FFF];
-
-				for (int l = 0; l < 8; l++)
-				{
-					uint8_t low_bit = tile_data_low >> 7 - l & 0x01;
-					uint8_t high_bit = tile_data_high >> 7 - l & 0x01;
-					uint8_t pixel_palette = low_bit | high_bit << 1;
-
-					uint8_t pixel_color = ppu.BGP >> pixel_palette * 2 & 0x03;
-					*(uint32_t*)(window_buffer + (j * 8 + l + (i * 8 + k / 2) * 32 * 8) * 4) = palette[pixel_color];
-				}
-			}
-		}
-}
-
 void PPU_clock(void)  
 {
+	static uint8_t spriteX;
+	static uint8_t spriteY;
+
 	switch (ppu.state)
 	{
-		case PPU_STATE_OAM_SEARCH:  // mode 2: OAM memory search
+		case PPU_STATE_OAM_SEARCH:  //////////////////////////////////////////////// MODE 2: OAM memory search (80 clock cycles)
 			if (ppu.cycle == 0)
 			{
 				ppu.STAT.bits.mode_flag = ppu.STAT.bits.mode_flag & ~STAT_MODE_BITS | SCREEN_MODE2;
 
-				if (check_int_enabled(INT_LCD_STAT) && ppu.STAT.bits.mode2_OAM_interrupt)
+				if (ppu.STAT.bits.mode2_OAM_interrupt)
 					set_int_flag(INT_LCD_STAT);
+
+				// reset sprite_index queue
+				ppu.scanline_sprite_count = 0;
+				spriteX = 0;
+				spriteY = 0; 
+			}
+
+			if (ppu.cycle % 2 == 0)            // even cycle: read sprite_index's Y attribute
+				spriteY = OAM[(ppu.cycle) / 2 * 4];
+			else                               // ppu.cycle % 2 != 0 - odd cycle: read sprite_index's X attribute and store in sprite_index queue if visible
+			{
+				spriteX = OAM[(ppu.cycle / 2) * 4 + 1];
+
+				if (ppu.scanline_sprite_count < 10)  // max 10 sprites on each scanline, other sprites are ignored
+				{
+					if (ppu.LCDC.bits.sprite_size)  // 8x16 sprite_index size
+					{
+						if(ppu.LY >= spriteY - 16 && ppu.LY <= spriteY - 16 + 16)  // compare sprite_index's y-coordinate and LY and add sprite_index to queue if visible
+						{
+							ppu.scanline_sprites[ppu.scanline_sprite_count].x = spriteX;
+							ppu.scanline_sprites[ppu.scanline_sprite_count].y = spriteY;
+							ppu.scanline_sprites[ppu.scanline_sprite_count].tile_number = OAM[ppu.cycle * 4 + 2];
+							ppu.scanline_sprites[ppu.scanline_sprite_count].attributes.reg = OAM[ppu.cycle * 4 + 3];
+
+							ppu.scanline_sprite_count++;
+						}
+					}
+					else  // 8x8 sprite_index size 
+					{
+						if (ppu.LY >= spriteY - 16 && ppu.LY < spriteY - 16 + 8)  // compare sprite_index's y-coordinate and LY and add sprite_index to queue if visible
+							{
+								ppu.scanline_sprites[ppu.scanline_sprite_count].x = spriteX;
+								ppu.scanline_sprites[ppu.scanline_sprite_count].y = spriteY;
+								ppu.scanline_sprites[ppu.scanline_sprite_count].tile_number = OAM[(ppu.cycle / 2) * 4 + 2];
+								ppu.scanline_sprites[ppu.scanline_sprite_count].attributes.reg = OAM[(ppu.cycle / 2) * 4 + 3];
+
+								ppu.scanline_sprite_count++;
+							}
+					}
+				}
 			}
 
 			ppu.cycle++;
 
 			if (ppu.cycle == OAM_CLOCKS)
+			{
+				// sort sprites in queue
+				for (int i = 0; i < ppu.scanline_sprite_count - 1; i++)
+					for (int j = i + 1; j > 0; j--)
+					{
+						if (ppu.scanline_sprites[j].x < ppu.scanline_sprites[j - 1].x)
+						{
+							uint8_t spriteX_temp = ppu.scanline_sprites[j].x;
+							uint8_t spriteY_temp = ppu.scanline_sprites[j].y;
+							uint8_t tile_number_temp = ppu.scanline_sprites[j].tile_number;
+							uint8_t attributes_temp = ppu.scanline_sprites[j].attributes.reg;
+
+							ppu.scanline_sprites[j].x = ppu.scanline_sprites[j - 1].x;
+							ppu.scanline_sprites[j].y = ppu.scanline_sprites[j - 1].y;
+							ppu.scanline_sprites[j].tile_number = ppu.scanline_sprites[j - 1].tile_number;
+							ppu.scanline_sprites[j].attributes.reg = ppu.scanline_sprites[j - 1].attributes .reg;
+
+							ppu.scanline_sprites[j - 1].x = spriteX_temp;
+							ppu.scanline_sprites[j - 1].y = spriteY_temp;
+							ppu.scanline_sprites[j - 1].tile_number = tile_number_temp;
+							ppu.scanline_sprites[j - 1].attributes.reg = attributes_temp;
+						}
+					}
+
 				ppu.state = PPU_STATE_PIXEL_TRANSFER;
+			}
 
 			break;
-		case PPU_STATE_PIXEL_TRANSFER:  // mode 3: pixel transfer
+
+		case PPU_STATE_PIXEL_TRANSFER:  //////////////////////////////////////////////// MODE 3: pixel transfer
 			if (ppu.cycle == OAM_CLOCKS)
 			{
 				ppu.STAT.bits.mode_flag = ppu.STAT.bits.mode_flag & ~STAT_MODE_BITS | SCREEN_MODE3;
@@ -339,96 +391,266 @@ void PPU_clock(void)
 				
 				//uint8_t tileX = ppu.SCX / 8 % 32;
 				//uint8_t tileY = (ppu.LY + ppu.SCY) / 8 % 32;
-				//ppu.tile_map_address = tile_map_base + tileX + tileY * 32;
+				//ppu.background_tile_map_address = tile_map_base + tileX + tileY * 32;
 
 				uint8_t tileX = ppu.SCX >> 3 & 0x1F;               // coarse x
 				uint8_t tileY = (ppu.SCY + ppu.LY) >> 3 & 0x1F;    // coarse y
-				ppu.tile_map_address = tile_map_base | ppu.LCDC.bits.BG_tile_map << 10 | tileY << 5 | tileX;  // tile address: 1001.1NYY.YYYX.XXXX
+				ppu.background_tile_map_address = tile_map_base | ppu.LCDC.bits.BG_tile_map << 10 | tileY << 5 | tileX;  // tile address: 1001.1NYY.YYYX.XXXX
 
-				ppu.dot_clock = 0;
-				ppu.dot_clock_enabled = 0;
+				ppu.current_pixel = 0;
 				ppu.scrollX = ppu.SCX;
-				ppu.fetched = 0;
-				ppu.pixel_FIFO_count = 0;
-				ppu.pixel_FIFO_low = 0x0000;
-				ppu.pixel_FIFO_high = 0x0000;
+
+				ppu.background_shift_register_low = 0x00;
+				ppu.background_shift_register_high = 0x00;
+
+				ppu.pixel_FIFO_stop = 1;
+				ppu.pixel_FIFO_empty = 1;
+				ppu.pixel_FIFO_shift = 8;
+
+				ppu.fetcher_state = FETCHER_STATE_BACKGROUND;
+				ppu.fetcher_substate = FETCHER_STATE_BEFORE_FETCH_TILE;
+
+				ppu.current_sprite = 0;
+			}
+			
+			// check if current pixel contains sprite_index  TODO 8x16 SPRITES!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+			if (ppu.LCDC.bits.sprites_enabled && ppu.fetcher_state != FETCHER_STATE_SPRITES) 
+			{
+				for (int i = ppu.current_sprite; i < ppu.scanline_sprite_count; i++)  // sprites are sorted by ascending x-coordinate
+					if (ppu.current_pixel >= ppu.scanline_sprites[i].x - 8 && ppu.current_pixel <= ppu.scanline_sprites[i].x - 8 + 8)
+					{
+						ppu.pixel_FIFO_stop = 1;  // stop pixel FIFO while fetching sprite_index tile data
+
+						ppu.saved_substate = ppu.fetcher_substate;                // save fetcher's state
+
+						ppu.fetcher_state = FETCHER_STATE_SPRITES;                // fetch sprite_index tile - restart fetcher
+						ppu.fetcher_substate = FETCHER_STATE_BEFORE_FETCH_TILE;
+
+						ppu.current_sprite++;
+						ppu.sprite_index = i;
+
+						break;
+					}
 			}
 
 			/**** fetcher ****/
-			if (ppu.cycle >= 87)  // 6 cycles tile fetch and discard
-				switch (ppu.cycle % 8)
+			if (ppu.cycle >= 86)  // first 6 cycles tile fetch and discard
+				switch (ppu.fetcher_state)
 				{
-					case 0:  // step 1: fetch tile data address and load FIFO (increment tile map address)				
-						ppu.tile_number = VRAM[ppu.tile_map_address & 0x1FFF];
-						uint16_t next_address = ppu.tile_map_address + 1 & 0x001F;
-						ppu.tile_map_address = ppu.tile_map_address & 0xFFE0 | next_address;
+					case FETCHER_STATE_BACKGROUND:  // fetching background tile
 
-						if (ppu.fetched)
+						switch (ppu.fetcher_substate)
 						{
-							ppu.pixel_FIFO_low = ppu.pixel_FIFO_low & 0xFF00 | ppu.tile_data_low;
-							ppu.pixel_FIFO_high = ppu.pixel_FIFO_high & 0xFF00 | ppu.tile_data_high;
-							ppu.pixel_FIFO_count += 8;
+							case FETCHER_STATE_BEFORE_FETCH_TILE:
+								ppu.fetcher_substate = FETCHER_STATE_FETCH_TILE;
+
+								break;
+
+							case FETCHER_STATE_FETCH_TILE:  
+								ppu.tile_number = VRAM[ppu.background_tile_map_address & 0x1FFF];
+								uint16_t next_address = ppu.background_tile_map_address + 1 & 0x001F;
+								ppu.background_tile_map_address = ppu.background_tile_map_address & 0xFFE0 | next_address;
+
+								ppu.fetcher_substate = FETCHER_STATE_BEFORE_READ_TILE_LOW;
+
+								break;
+
+							case FETCHER_STATE_BEFORE_READ_TILE_LOW:
+								ppu.fetcher_substate = FETCHER_STATE_READ_TILE_LOW;
+
+								break;
+
+							case FETCHER_STATE_READ_TILE_LOW:  
+							{
+								uint16_t tile_data_base = ppu.LCDC.bits.BG_and_window_tileset ? BG_TILE_DATA0 : BG_TILE_DATA1;
+
+								if (tile_data_base == BG_TILE_DATA0)
+									ppu.tile_data_address = tile_data_base + ppu.tile_number * 16 + (ppu.SCY + ppu.LY) % 8 * 2;
+								else    // tile_data_base == BG_TILE_DATA1
+									if (ppu.tile_number & 0x80)
+										ppu.tile_data_address = tile_data_base + 0x0800 - (UINT8_MAX + 1 - ppu.tile_number) * 16 + (ppu.SCY + ppu.LY) % 8 * 2;
+									else
+										ppu.tile_data_address = tile_data_base + 0x0800 + ppu.tile_number * 16 + (ppu.SCY + ppu.LY) % 8 * 2;
+
+								ppu.tile_data_low = VRAM[ppu.tile_data_address & 0x1FFF];
+
+
+								ppu.fetcher_substate = FETCHER_STATE_BEFORE_READ_TILE_HIGH;
+							}
+							break;
+
+							case FETCHER_STATE_BEFORE_READ_TILE_HIGH:
+								ppu.fetcher_substate = FETCHER_STATE_READ_TILE_HIGH;
+
+								break;
+
+							case FETCHER_STATE_READ_TILE_HIGH:  
+								ppu.tile_data_high = VRAM[ppu.tile_data_address + 1 & 0x1FFF];
+
+								ppu.fetcher_substate = FETCHER_STATE_PUSH_TO_FIFO;
+
+								break;
+
+							case FETCHER_STATE_PUSH_TO_FIFO:
+								if (ppu.pixel_FIFO_empty)
+								{
+									ppu.background_shift_register_low = ppu.tile_data_low;
+									ppu.background_shift_register_high = ppu.tile_data_high;
+
+									ppu.pixel_FIFO_empty = 0;
+									ppu.pixel_FIFO_stop = 0;
+
+									ppu.fetcher_substate = FETCHER_STATE_BEFORE_FETCH_TILE;
+								}
+
+								break;
 						}
 
 						break;
-					case 2:  // step 2: fetch tile data low bit plane
-					{
-						uint16_t tile_data_base = ppu.LCDC.bits.BG_and_window_tileset ? BG_TILE_DATA0 : BG_TILE_DATA1;
 
-						if (tile_data_base == BG_TILE_DATA0)
-							ppu.tile_data_address = tile_data_base + ppu.tile_number * 16 + (ppu.SCY + ppu.LY) % 8 * 2;
-						else    // tile_data_base == BG_TILE_DATA1
-							if (ppu.tile_number & 0x80)
-								ppu.tile_data_address = tile_data_base + 0x0800 - (UINT8_MAX + 1 - ppu.tile_number) * 16 + (ppu.SCY + ppu.LY) % 8 * 2;
-							else
-								ppu.tile_data_address = tile_data_base + 0x0800 + ppu.tile_number * 16 + (ppu.SCY + ppu.LY) % 8 * 2;
+					case FETCHER_STATE_SPRITES:  // fetching sprite_index tile
 
-						ppu.tile_data_low = VRAM[ppu.tile_data_address & 0x1FFF];
-					}
-						break;
-					case 4:  // step 3: fetch tile data high bit plane						
-						ppu.tile_data_high = VRAM[ppu.tile_data_address + 1 & 0x1FFF];
-						ppu.fetched = 1;
-						break;
-					case 6:  // step 4: sprite window (idle)
+						switch (ppu.fetcher_substate)
+						{
+							case FETCHER_STATE_BEFORE_FETCH_TILE:
+								ppu.fetcher_substate = FETCHER_STATE_FETCH_TILE;
+
+								break;
+
+							case FETCHER_STATE_FETCH_TILE: 
+								ppu.fetcher_substate = FETCHER_STATE_BEFORE_READ_TILE_LOW;
+
+								break;
+
+							case FETCHER_STATE_BEFORE_READ_TILE_LOW:
+								ppu.fetcher_substate = FETCHER_STATE_READ_TILE_LOW;
+
+								break;
+
+							case FETCHER_STATE_READ_TILE_LOW:  
+							{
+								uint8_t sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number;
+								uint16_t sprite_tile_data_base_address = VRAM_BASE + sprite_tile_number * 16;
+								uint8_t offset = (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16)) * 2;
+								ppu.sprite_tile_data_low = VRAM[sprite_tile_data_base_address + offset & 0x1FFF];
+
+								ppu.fetcher_substate = FETCHER_STATE_BEFORE_READ_TILE_HIGH;
+							}
+		
+							break;
+
+							case FETCHER_STATE_BEFORE_READ_TILE_HIGH:
+								ppu.fetcher_substate = FETCHER_STATE_READ_TILE_HIGH;
+								break;
+
+							case FETCHER_STATE_READ_TILE_HIGH:  		
+							{
+								uint8_t sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number;
+								uint16_t sprite_tile_data_base_address = VRAM_BASE + sprite_tile_number * 16;
+								uint8_t offset = (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16)) * 2 + 1;
+								ppu.sprite_tile_data_high = VRAM[sprite_tile_data_base_address + offset & 0x1FFF];
+
+								ppu.fetcher_substate = FETCHER_STATE_PUSH_TO_FIFO;
+							}
+
+								break;
+
+							case FETCHER_STATE_PUSH_TO_FIFO:
+								ppu.sprite_shift_register_low[ppu.sprite_index] = ppu.sprite_tile_data_low;
+								ppu.sprite_shift_register_high[ppu.sprite_index] = ppu.sprite_tile_data_high;
+
+								ppu.fetcher_state = FETCHER_STATE_BACKGROUND;  // restore fetcher's state
+								ppu.fetcher_substate = ppu.saved_substate;
+
+								ppu.pixel_FIFO_stop = 0;
+
+								break;
+						}
+
 						break;
 				}
-
+				
 			/**** pixel FIFO ****/
-			if (ppu.pixel_FIFO_count > 8)
+			if (!ppu.pixel_FIFO_stop)
 			{
 				if (ppu.scrollX == 0)
 				{
-					uint8_t pixel_palette = ppu.pixel_FIFO_low >> 15 & 0x0001 | (ppu.pixel_FIFO_high >> 15 & 0x0001) << 1;
-					uint8_t pixel_color = ppu.BGP >> pixel_palette * 2 & 0x03;
-					*(uint32_t*)(buffer + ppu.dot_clock * 4 + ppu.LY * DISPLAY_WIDTH * 4) = palette[pixel_color];
+					// background pixel color 
+					uint8_t background_pixel_color_index = ppu.background_shift_register_low >> 7 & 0x01 | (ppu.background_shift_register_high >> 7 & 0x01) << 1;
+					uint8_t background_pixel_color = ppu.BGP >> background_pixel_color_index * 2 & 0x03;
 
-					ppu.dot_clock++;
+					// sprite pixel color
+					uint8_t sprite_pixel_color_index[10];
+					uint8_t sprite_pixel_color[10];
+
+					for (int i = 0; i < ppu.scanline_sprite_count; i++)
+					{
+						sprite_pixel_color_index[i] = ppu.sprite_shift_register_low[i] >> 7 & 0x01 | (ppu.sprite_shift_register_high[i] >> 7 & 0x01) << 1;
+
+						uint8_t pixel_palette = ppu.scanline_sprites[i].attributes.bits.OAM_palette ? ppu.OBJP1 : ppu.OBJP0;
+						sprite_pixel_color[i] = pixel_palette >> sprite_pixel_color_index[i] * 2 & 0x03;
+					}
+					
+					uint8_t pixel_color;
+
+					int sprite_pixel_opaque = 0;
+					if (ppu.scanline_sprites[0].attributes.bits.priority == 1 && background_pixel_color_index != 0)  // if sprite_index priority == 1 the sprite_index is drawn behind background color index 1,2 and 3 (but in front of background color index 0)
+						pixel_color = background_pixel_color;
+					else
+					{
+						for (int i = 0; i < ppu.scanline_sprite_count; i++)
+							if (sprite_pixel_color_index[i] != 0)
+							{
+								pixel_color = sprite_pixel_color[i];
+								sprite_pixel_opaque = 1;
+								break;
+							}
+					}
+					if (!sprite_pixel_opaque)
+						pixel_color = background_pixel_color;
+
+					// draw pixel
+					*(uint32_t*)(buffer + ppu.current_pixel * 4 + ppu.LY * DISPLAY_WIDTH * 4) = palette[pixel_color];
+
+					ppu.current_pixel++;
+
+					if (ppu.current_pixel == DISPLAY_WIDTH)
+					{
+						ppu.current_pixel = 0;
+						ppu.state = PPU_STATE_HBLANK;
+					}
 				}
 				else
 					ppu.scrollX--;
 
-				ppu.pixel_FIFO_count--;
-			}
+				ppu.background_shift_register_low <<= 1;
+				ppu.background_shift_register_high <<= 1;
 
-			ppu.pixel_FIFO_low <<= 1;
-			ppu.pixel_FIFO_high <<= 1;
+				ppu.pixel_FIFO_shift--;
 
-			if (ppu.dot_clock == DISPLAY_WIDTH)
-			{
-				ppu.dot_clock = 0;
-				ppu.state = PPU_STATE_HBLANK;
+				if (ppu.pixel_FIFO_shift == 0)
+				{
+					ppu.pixel_FIFO_shift = 8;
+					ppu.pixel_FIFO_empty = 1;
+				}
+
+				for (int i = 0; i < 10; i++)
+				{
+					ppu.sprite_shift_register_low[i] <<= 1;
+					ppu.sprite_shift_register_high[i] <<= 1;
+				}				
 			}
 
 			ppu.cycle++;
 
 			break;
-		case PPU_STATE_HBLANK:  // mode 0: in HBLANK
+
+		case PPU_STATE_HBLANK:  //////////////////////////////////////////////// MODE 0: HBLANK
 			if ((ppu.STAT.bits.mode_flag & STAT_MODE_BITS) != SCREEN_MODE0)
 			{
 				ppu.STAT.bits.mode_flag = ppu.STAT.bits.mode_flag & ~STAT_MODE_BITS | SCREEN_MODE0;
 
-				if (check_int_enabled(INT_LCD_STAT) && ppu.STAT.bits.mode0_HBLANK_interrupt)
+				if (ppu.STAT.bits.mode0_HBLANK_interrupt)
 					set_int_flag(INT_LCD_STAT);
 			}
 
@@ -456,17 +678,19 @@ void PPU_clock(void)
 			}
 
 			break;
-		case PPU_STATE_VBLANK:  // mode 1: in VBLANK
-			if (ppu.cycle == 0)
-			{
 
+		case PPU_STATE_VBLANK:  //////////////////////////////////////////////// MODE 1: VBLANK
+			if (ppu.LY == DISPLAY_HEIGHT && ppu.cycle == 0)
+			{
 				ppu.STAT.bits.mode_flag = ppu.STAT.bits.mode_flag & ~STAT_MODE_BITS | SCREEN_MODE1;
 
-				if (check_int_enabled(INT_VBLANK) && ppu.STAT.bits.mode1_VBLANK_interrupt)
-					set_int_flag(INT_VBLANK);  	
+				set_int_flag(INT_VBLANK);
+
+				if (ppu.STAT.bits.mode1_VBLANK_interrupt)
+					set_int_flag(INT_LCD_STAT);  	
 
 				// render frame
-				render_VRAM();
+				PPU_render_VRAM();
 
 				if (ppu.LCDC.bits.LCD_power)
 					PPU_render();
@@ -498,6 +722,106 @@ void PPU_clock(void)
 
 			break;
 	}
+}
+
+void PPU_render_VRAM(void)
+{
+	// render tiles
+	for (int i = 0; i < 24; i++)
+		for (int h = 0; h < 16; h++)
+		{
+			uint16_t tile_base_adddress = VRAM_BASE + (h + i * 16) * 16;
+
+			for (int j = 0; j < 16; j += 2)
+			{
+				uint8_t tile_data_low = VRAM[tile_base_adddress + j & 0x1FFF];
+				uint8_t tile_data_high = VRAM[tile_base_adddress + j + 1 & 0x1FFF];
+
+				for (int k = 0; k < 8; k++)
+				{
+					uint8_t pixel_palette_low = tile_data_low >> 7 - k & 0x01;
+					uint8_t pixel_palette_high = tile_data_high >> 7 - k & 0x01;
+
+					uint8_t pixel_color_index = pixel_palette_low | pixel_palette_high << 1;
+					uint8_t pixel_palette = ppu.BGP >> pixel_color_index * 2 & 0x03;
+					uint32_t pixel_color = palette[pixel_palette];
+
+					*(uint32_t*)(tile_buffer + (h * 8 + k + (i * 8 + j / 2) * 16 * 8) * 4) = pixel_color;
+				}
+			}
+		}
+
+	// render background VRAM
+	uint16_t background_tile_map_base = ppu.LCDC.bits.BG_tile_map ? BG_TILE_MAP1 : BG_TILE_MAP0;
+	uint16_t background_tile_data_base = ppu.LCDC.bits.BG_and_window_tileset ? BG_TILE_DATA0 : BG_TILE_DATA1;
+
+	for (int i = 0; i < 32; i++)
+		for (int j = 0; j < 32; j++)
+		{
+			uint8_t tile_number = VRAM[background_tile_map_base + j + i * 32 & 0x1FFF];
+
+			uint16_t tile_data_address;
+
+			if (background_tile_data_base == BG_TILE_DATA0)
+				tile_data_address = background_tile_data_base + tile_number * 16;
+			else    // background_tile_data_base == BG_TILE_DATA1
+				if (tile_number & 0x80)
+					tile_data_address = background_tile_data_base + 0x0800 - (UINT8_MAX + 1 - tile_number) * 16;
+				else
+					tile_data_address = background_tile_data_base + 0x0800 + tile_number * 16;
+
+			for (int k = 0; k < 16; k += 2)
+			{
+				uint8_t tile_data_low = VRAM[tile_data_address + k & 0x1FFF];
+				uint8_t tile_data_high = VRAM[tile_data_address + k + 1 & 0x1FFF];
+
+				for (int l = 0; l < 8; l++)
+				{
+					uint8_t low_bit = tile_data_low >> 7 - l & 0x01;
+					uint8_t high_bit = tile_data_high >> 7 - l & 0x01;
+					uint8_t pixel_palette = low_bit | high_bit << 1;
+
+					uint8_t pixel_color = ppu.BGP >> pixel_palette * 2 & 0x03;
+					*(uint32_t*)(background_buffer + (j * 8 + l + (i * 8 + k / 2) * 32 * 8) * 4) = palette[pixel_color];
+				}
+			}
+		}
+
+	// render window VRAM
+	uint16_t window_tile_map_base = ppu.LCDC.bits.window_tile_map ? BG_TILE_MAP1 : BG_TILE_MAP0;
+	uint16_t window_tile_data_base = ppu.LCDC.bits.BG_and_window_tileset ? BG_TILE_DATA0 : BG_TILE_DATA1;
+
+	for (int i = 0; i < 32; i++)
+		for (int j = 0; j < 32; j++)
+		{
+			uint8_t tile_number = VRAM[window_tile_map_base + j + i * 32 & 0x1FFF];
+
+			uint16_t tile_data_address;
+
+			if (window_tile_data_base == BG_TILE_DATA0)
+				tile_data_address = background_tile_data_base + tile_number * 16;
+			else    // window_tile_data_base == BG_TILE_DATA1
+				if (tile_number & 0x80)
+					tile_data_address = background_tile_data_base + 0x0800 - (UINT8_MAX + 1 - tile_number) * 16;
+				else
+					tile_data_address = window_tile_data_base + 0x0800 + tile_number * 16;
+
+			for (int k = 0; k < 16; k += 2)
+			{
+				uint8_t tile_data_low = VRAM[tile_data_address + k & 0x1FFF];
+				uint8_t tile_data_high = VRAM[tile_data_address + k + 1 & 0x1FFF];
+
+				for (int l = 0; l < 8; l++)
+				{
+					uint8_t low_bit = tile_data_low >> 7 - l & 0x01;
+					uint8_t high_bit = tile_data_high >> 7 - l & 0x01;
+					uint8_t pixel_palette = low_bit | high_bit << 1;
+
+					uint8_t pixel_color = ppu.BGP >> pixel_palette * 2 & 0x03;
+					*(uint32_t*)(window_buffer + (j * 8 + l + (i * 8 + k / 2) * 32 * 8) * 4) = palette[pixel_color];
+				}
+			}
+		}
 }
 
 void PPU_render(void)

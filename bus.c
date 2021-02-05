@@ -6,17 +6,20 @@
 #include "joypad.h"
 #include "serial.h"
 #include "timer.h"
+#include "DMA.h"
+#include "joypad.h"
 
 static uint8_t WRAM[0x2000];
-static uint8_t OAM[0x80 + 0x20];
 static uint8_t HRAM[0x80];
 static uint8_t IE;
-static uint8_t IF;
+static uint8_t IF = 0xE0;
 
 void bus_reset(void)
 {
 
 }
+
+#include <stdio.h>
 
 /**** bus interface ****/
 uint8_t bus_read(uint16_t address)
@@ -34,7 +37,7 @@ uint8_t bus_read(uint16_t address)
         return WRAM[address & 0x1FFF];
     else if (address >= 0xE000 && address <= 0xFFFF)
         if (address >= 0xFE00 && address <= 0xFE9F)         // OAM - object attribute table
-            return OAM[address & 0x00FF];  
+            return read_OAM(address);  
         else if (address >= 0xFF00 && address <= 0xFF7F)    // IO memory mapped devices (128 bytes)
         {
             if (address == 0xFF00)             // joypdad P1/JOY
@@ -93,10 +96,12 @@ void bus_write(uint16_t address, uint8_t data)
         WRAM[address & 0x1FFF] = data;
     else if (address >= 0xE000 && address <= 0xFFFF)
         if (address >= 0xFE00 && address <= 0xFE9F)         // OAM - object attribute table
-            ;
+            write_OAM(address, data);
         else if (address >= 0xFF00 && address <= 0xFF7F)    // IO memory mapped devices (128 bytes)
         {
-            if (address == 0xFF01)             // serial 
+            if (address == 0xFF00)             // joypad
+                joypad_write(data);
+            else if (address == 0xFF01)        // serial 
                 serial_write_SB(data);
             else if (address == 0xFF02)        // serial SC
                 serial_write_SC(data);
@@ -118,6 +123,8 @@ void bus_write(uint16_t address, uint8_t data)
                 PPU_write_SCX(data);
             else if (address == 0xFF45)        // ppu LYC
                 PPU_write_LYC(data);
+            else if (address == 0xFF46)        // DMA controller
+                DMA_start(data);
             else if (address == 0xFF47)        // ppu BGP        
                 PPU_write_BGP(data);
             else if (address == 0xFF48)        // ppu OBJP0
@@ -134,12 +141,12 @@ void bus_write(uint16_t address, uint8_t data)
                     cpu.boot = 0;
             }
             else if (address == INT_FLAG_REG)  // IF Interrupt Flag register
-                IF = data;
+                IF = IF & 0xE0 | data & 0x1F;
         }
         else if (address >= 0xFF80 && address <= 0xFFFE)    // HRAM
             HRAM[address & 0x007F] = data;
         else if (address == INT_ENABLE_REG)                 // IE Interrupt Enable Register
-            IE = data;
+            IE = IE & 0xE0 | data & 0x1F;
         else                                                // invalid memory access 
             printf("invalid memory access - write 0x%x to 0x%x\n", data, address);
 }

@@ -1,9 +1,12 @@
 #include "CPU.h"
 #include "PPU.h"
+#include "DMA.h"
 #include "cartridge.h"
 #include "timer.h"
 #include "SDL2/SDL.h"
 #include <stdlib.h>
+
+void clock(void);
 
 int main(int argc, char *argv[])
 {
@@ -15,28 +18,29 @@ int main(int argc, char *argv[])
 
     cartridge_load("Tetris");
     //cartridge_load("Dr. Mario");
+    //cartridge_load("Kirby's Dream Land");
     
     /**** test ROMs ****/
-    //cartridge_load("cpu_instrs");                 // TODO: MBC1
-    //cartridge_load("01-special");                 // OK
-    //cartridge_load("02-interrupts");              // OK
-    //cartridge_load("03-op sp,hl");                // OK
-    //cartridge_load("04-op r,imm");                // OK
-    //cartridge_load("05-op rp");                   // OK
-    //cartridge_load("06-ld r,r");                  // OK
-    //cartridge_load("07-jr,jp,call,ret,rst");      // OK
-    //cartridge_load("08-misc instrs");             // OK
-    //cartridge_load("09-op r,r");                  // OK
-    //cartridge_load("10-bit ops");                 // OK
-    //cartridge_load("11-op a,(hl)");               // OK
+    //cartridge_load("Test ROMs/cpu_instrs/individual/cpu_instrs");                 // TODO: MBC1
+    //cartridge_load("Test ROMs/cpu_instrs/individual/01-special");                 // OK
+    //cartridge_load("Test ROMs/cpu_instrs/individual/02-interrupts");              // OK
+    //cartridge_load("Test ROMs/cpu_instrs/individual/03-op sp,hl");                // OK
+    //cartridge_load("Test ROMs/cpu_instrs/individual/04-op r,imm");                // OK
+    //cartridge_load("Test ROMs/cpu_instrs/individual/05-op rp");                   // OK
+    //cartridge_load("Test ROMs/cpu_instrs/individual/06-ld r,r");                  // OK
+    //cartridge_load("Test ROMs/cpu_instrs/individual/07-jr,jp,call,ret,rst");      // OK
+    //cartridge_load("Test ROMs/cpu_instrs/individual/08-misc instrs");             // OK
+    //cartridge_load("Test ROMs/cpu_instrs/individual/09-op r,r");                  // OK
+    //cartridge_load("Test ROMs/cpu_instrs/individual/10-bit ops");                 // OK
+    //cartridge_load("Test ROMs/cpu_instrs/individual/11-op a,(hl)");               // OK
 
-    //cartridge_load("instr_timing");               // OK
+    //cartridge_load("Test ROMs/instr_timing/instr_timing");               // OK
 
-    //cartridge_load("interrupt_time");             
+    //cartridge_load("Test ROMs/interrupt_time/interrupt_time");             
     
-    //cartridge_load("01-read_timing");
-    //cartridge_load("02-write_timing");            // OK
-    //cartridge_load("03-modify_timing");
+    //cartridge_load("Test ROMs/mem_timing/individual/01-read_timing");
+    //cartridge_load("Test ROMs/mem_timing/individual/02-write_timing");            // OK
+    //cartridge_load("Test ROMs/mem_timing/individual/03-modify_timing");
 
     /**** initialize emulator's systems ****/
     CPU_init(&cpu);
@@ -53,18 +57,26 @@ int main(int argc, char *argv[])
             if (event.type == SDL_QUIT)
                 running = 0;
 
-        CPU_execute_machine_cycle(&cpu);
-
-        PPU_clock();
-        PPU_clock();
-        PPU_clock();
-        PPU_clock();
-        
-        timer_clock();
+        clock();
     }
     
     PPU_deinit();
     SDL_Quit();
 
     return 0;
+}
+
+void clock(void)
+{
+    if (DMA_active)
+        DMA_copy();
+
+    CPU_execute_machine_cycle(&cpu);
+
+    PPU_clock();
+    PPU_clock();
+    PPU_clock();
+    PPU_clock();
+
+    timer_clock();
 }

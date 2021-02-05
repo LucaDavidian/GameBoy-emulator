@@ -9,6 +9,7 @@ void PPU_deinit(void);
 void PPU_clock(void);
 
 void PPU_render(void);
+void PPU_render_VRAM(void);
 
 void PPU_write_LCDC(uint8_t value);
 void PPU_write_STAT(uint8_t value);
@@ -32,5 +33,8 @@ uint8_t PPU_read_WX(void);
 
 void write_VRAM(uint16_t address, uint8_t data);
 uint8_t read_VRAM(uint16_t address);
+
+void write_OAM(uint16_t address, uint8_t data);
+uint8_t read_OAM(uint16_t address);
 
 #endif  // __PPU_H_

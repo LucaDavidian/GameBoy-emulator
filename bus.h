@@ -8,6 +8,8 @@
 #define INT_FLAG_REG       0xFF0F
 #define INT_REG_MASK         0x1F
 
+#define OAM_BASE           0xFE00
+
 /**** bus interface ****/
 uint8_t bus_read(uint16_t address);
 void bus_write(uint16_t address, uint8_t data);

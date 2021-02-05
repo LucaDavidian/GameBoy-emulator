@@ -24,7 +24,7 @@ int CPU_init(void)
         return 0;
     }
 
-    CPU_Reset(cpu);
+    CPU_Reset();
 
     return 1;
 }
@@ -170,7 +170,7 @@ void CPU_execute_machine_cycle(void)
     else if (cpu.current_machine_cycle > cpu.current_instruction->machine_cycles)  // if instruction execution ended fetch new opcode
     {
         // check and service interrupts after each instruction
-        if (!CPU_check_interrupts(cpu))  // if interrupt is not being serviced
+        if (!CPU_check_interrupts())  // if interrupt is not being serviced
         {
             cpu.current_machine_cycle = 1;  // start from machine cycle M1
 
@@ -191,20 +191,6 @@ void CPU_execute_machine_cycle(void)
             }
             else
                 cpu.current_instruction = &instruction_table[cpu.instruction_register];           // "decode" instruction   
-
-            static int l = 0;
-            if (cpu.PC - 1 == 0x0358)
-            {
-                //CPU_log(cpu);
-                l = 1;
-                
-            }
-
-            //if (cpu.PC -1 == 0x02cf)
-            //    cpu.A = 0x00;
-
-            //if (l)
-            //    CPU_log(cpu);
         }
     }
 

@@ -1,4 +1,5 @@
 #include "serial.h"
+#include <stdio.h>
 
 typedef struct Serial
 {
