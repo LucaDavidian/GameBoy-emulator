@@ -1,7 +1,7 @@
 #include "CPU.h"
 #include "PPU.h"
+#include "APU.h"
 #include "DMA.h"
-#include "cartridge.h"
 #include "timer.h"
 #include "SDL2/SDL.h"
 #include <stdlib.h>
@@ -34,7 +34,7 @@ int main(int argc, char *argv[])
     //cartridge_load("Test ROMs/cpu_instrs/individual/10-bit ops");                 // OK
     //cartridge_load("Test ROMs/cpu_instrs/individual/11-op a,(hl)");               // OK
 
-    //cartridge_load("Test ROMs/instr_timing/instr_timing");               // OK
+    //cartridge_load("Test ROMs/instr_timing/instr_timing");                        // OK
 
     //cartridge_load("Test ROMs/interrupt_time/interrupt_time");             
     
@@ -45,6 +45,7 @@ int main(int argc, char *argv[])
     /**** initialize emulator's systems ****/
     CPU_init(&cpu);
     PPU_init();
+    APU_init();
     timer_init();
 
     /**** emulation loop ****/
@@ -60,7 +61,9 @@ int main(int argc, char *argv[])
         clock();
     }
     
+    APU_deinit();
     PPU_deinit();
+
     SDL_Quit();
 
     return 0;
@@ -73,10 +76,15 @@ void clock(void)
 
     CPU_execute_machine_cycle(&cpu);
 
+    timer_clock();
+
     PPU_clock();
     PPU_clock();
     PPU_clock();
     PPU_clock();
 
-    timer_clock();
+    APU_clock();
+    APU_clock();
+    APU_clock();
+    APU_clock();
 }
