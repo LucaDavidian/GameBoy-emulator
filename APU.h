@@ -39,10 +39,13 @@ void APU_write_NR32(uint8_t value);
 void APU_write_NR33(uint8_t value);
 void APU_write_NR34(uint8_t value);
 
+uint8_t APU_read_wave_table(uint16_t address);
+void APU_write_wave_table(uint16_t address, uint8_t data);
+
 uint8_t APU_read_NR41(void);
 uint8_t APU_read_NR42(void);
 uint8_t APU_read_NR43(void);
-uint8_t APU_read_NR44(void);\
+uint8_t APU_read_NR44(void);
 void APU_write_NR41(uint8_t value);
 void APU_write_NR42(uint8_t value);
 void APU_write_NR43(uint8_t value);

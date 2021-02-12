@@ -192,6 +192,13 @@ void CPU_execute_machine_cycle(void)
             else
                 cpu.current_instruction = &instruction_table[cpu.instruction_register];           // "decode" instruction   
         }
+
+        static int log = 0;
+        if (cpu.PC - 1 == 0x0100)
+            log = 1;
+
+        //if (log)
+        //    CPU_log();
     }
 
     cpu.current_instruction->instruction_handler(&cpu);    // execute current instruction's machine (M) cycle 

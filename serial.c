@@ -18,8 +18,8 @@ void serial_write_SC(uint8_t data)
 {
     serial.SC = data;
 
-    if (data & 0x81)
-        printf("%c", serial.SB);  // debug test ROM - print to console
+    //if (data & 0x81)
+    //    printf("%c", serial.SB);  // debug test ROM - print to console
 }
 
 uint8_t serial_read_SB(void)

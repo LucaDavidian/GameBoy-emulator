@@ -50,9 +50,26 @@ int cartridge_load(const char *rom_name)
     return 1;
 }
 
+static uint8_t ROM_bank = 1;  // 1 -- 127
+static enum Banking_Mode { ROM_BANKING_MODE, RAM_BANKING_MODE } banking_mode;
+
 uint8_t cartridge_read(uint16_t address)
 {
-    return cartridge->data[address];
+    switch (cartridge->MBC)
+    {
+        case ROM_ONLY:
+            return cartridge->data[address];
+            break;
+        case MBC1:
+            if (address >= 0x0000 && address <= 0x3FFF)
+                return cartridge->data[address];
+            else
+            {
+                uint32_t ROM_bank_address = ROM_bank * 0x4000;
+                return cartridge->data[ROM_bank_address + (address & 0x3FFF)];
+            }
+            break;
+    }
 }
 
 void cartridge_write(uint16_t address, uint8_t data)
@@ -61,8 +78,26 @@ void cartridge_write(uint16_t address, uint8_t data)
     {
         case ROM_ONLY:
             break;
-        case MBC1:
+        case MBC1:  // max 2 MB ROM + 32 KB RAM
+            if (address >= 0x2000 && address <= 0x3FFF)
+            {
+                ROM_bank = ROM_bank & 0x60 | data & 0x1F;     // low 5 bits of ROM bank number
 
+                if (data == 0x00)
+                    ROM_bank = ROM_bank & 0x60 | 0x01;
+            }
+            else if (address >= 0x4000 && address <= 0x5FFF)
+            {
+                if (banking_mode == ROM_BANKING_MODE)
+                    ROM_bank = ROM_bank & 0x1F | data & 0x60;     // high 2 bits of ROM bank number
+            }
+            else if (address >= 0x6000 && address <= 0x7FFF)
+            {
+                if ((data & 0x01) == 0)
+                    banking_mode = ROM_BANKING_MODE;
+                else
+                    banking_mode = RAM_BANKING_MODE;
+            }
             break;
     }
 }

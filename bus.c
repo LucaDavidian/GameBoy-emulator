@@ -79,25 +79,25 @@ uint8_t bus_read(uint16_t address)
             else if (address == 0xFF19)        // apu channel 2 frequency high NR24
                 APU_read_NR24();
             else if (address == 0xFF1A)        // apu channel 3 sound on/off NR30
-                ;
+                APU_read_NR30();
             else if (address == 0xFF1B)        // apu channel 3 sound length NR31
-                ;
+                APU_read_NR31();
             else if (address == 0xFF1C)        // apu channel 3 output level select NR32
-                ;
+                APU_read_NR32();
             else if (address == 0xFF1D)        // apu channel 3 frequency low NR33
-                ;
+                APU_read_NR33();
             else if (address == 0xFF1E)        // apu channel 3 frequency high NR34
-                ;
+                APU_read_NR34();
             else if (address == 0xFF1F)        // unused NR40
                 ;
             else if (address == 0xFF20)        // apu channel 4 sound length NR41
-                ;
+                return APU_read_NR41();
             else if (address == 0xFF21)        // apu channel 4 volume envelope NR42
-                ;
+                return APU_read_NR42();
             else if (address == 0xFF22)        // apu channel 4 polynomial counter NR43
-                ;
+                return APU_read_NR43();
             else if (address == 0xFF23)        // apu channel 4 counter/consecutive and initial NR44
-                ;
+                return APU_read_NR44();
             else if (address == 0xFF24)        // apu channel control, on/off and volume NR50          
                 return APU_read_NR50();
             else if (address == 0xFF25)        // sound output terminal selection NR51
@@ -107,7 +107,7 @@ uint8_t bus_read(uint16_t address)
             else if (address >= 0xFF27 && address <= 0xFF2F)  // apu unused
                 ;
             else if (address >= 0xFF30 && address <= 0xFF3F)  // apu wave table RAM
-                ;
+                return APU_read_wave_table(address);
 
             /**** PPU - LCD controller ****/
             else if (address == 0xFF40)        // ppu LCDC
@@ -145,7 +145,7 @@ uint8_t bus_read(uint16_t address)
 void bus_write(uint16_t address, uint8_t data)
 {
     if (address >= 0x0000 && address <= 0x7FFF)             ////////////// cartridge ROM - 32KB
-        ;
+        cartridge_write(address, data);
     else if (address >= 0x8000 && address <= 0x9FFF)        ////////////// VRAM - 8KB
         write_VRAM(address, data);
     else if (address >= 0xA000 && address <= 0xBFFF)        ////////////// external RAM - 8KB
@@ -199,25 +199,25 @@ void bus_write(uint16_t address, uint8_t data)
             else if (address == 0xFF19)        // apu channel 2 frequency high NR24
                 APU_write_NR24(data);
             else if (address == 0xFF1A)        // apu channel 3 sound on/off NR30
-                ;
+                APU_write_NR30(data);
             else if (address == 0xFF1B)        // apu channel 3 sound length NR31
-                ;
+                APU_write_NR31(data);
             else if (address == 0xFF1C)        // apu channel 3 output level select NR32
-                ;
+                APU_write_NR32(data);
             else if (address == 0xFF1D)        // apu channel 3 frequency low NR33
-                ;
+                APU_write_NR33(data);
             else if (address == 0xFF1E)        // apu channel 3 frequency high NR34
-                ;
+                APU_write_NR34(data);
             else if (address == 0xFF1F)        // apu unused NR40
                 ;
             else if (address == 0xFF20)        // apu channel 4 sound length NR41
-                ;
+                APU_write_NR41(data);
             else if (address == 0xFF21)        // apu channel 4 volume envelope NR42
-                ;
+                APU_write_NR42(data);
             else if (address == 0xFF22)        // apu channel 4 polynomial counter NR43
-                ;
+                APU_write_NR43(data);
             else if (address == 0xFF23)        // apu channel 4 counter/consecutive and initial NR44
-                ;
+                APU_write_NR44(data);
             else if (address == 0xFF24)        // apu channel control, on/off and volume NR50          
                 APU_write_NR50(data);
             else if (address == 0xFF25)        // sound output terminal selection NR51
@@ -227,7 +227,7 @@ void bus_write(uint16_t address, uint8_t data)
             else if (address >= 0xFF27 && address <= 0xFF2F)  // apu unused
                 ;
             else if (address >= 0xFF30 && address <= 0xFF3F)  // apu wave table RAM
-                ;
+                APU_write_wave_table(address, data);
 
             /**** PPU - LCD controller ****/
             else if (address == 0xFF40)        // ppu LCDC

@@ -16,9 +16,11 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    cartridge_load("Tetris");
-    //cartridge_load("Dr. Mario");
+    //cartridge_load("Tetris");
+    cartridge_load("Dr. Mario");
     //cartridge_load("Kirby's Dream Land");
+    //cartridge_load("Super Mario Land");
+    //cartridge_load("DuckTales");
     
     /**** test ROMs ****/
     //cartridge_load("Test ROMs/cpu_instrs/individual/cpu_instrs");                 // TODO: MBC1
