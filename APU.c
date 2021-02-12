@@ -444,7 +444,7 @@ void APU_clock(void)
 	}
 
 	// clock channel 4 frequency timer
-	if (apu.clock_cycles % 4 == 0)
+	if (apu.clock_cycles % 8 == 0)
 	{
 		apu.channel4.frequency_timer--;
 

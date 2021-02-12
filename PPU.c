@@ -13,31 +13,38 @@
 #define STAT_MODE2_INTERRUPT_OAM_BIT     0x20
 #define STAT_LYC_INTERRUPT_BIT           0x40
 
-#define SCREEN_MODE0                        0  // in horizontal blanking period
-#define SCREEN_MODE1                        1  // in vertical blanking period
-#define SCREEN_MODE2                        2  // during OAM search
-#define SCREEN_MODE3                        3  // during pixel transfer
-
 /**** display resolution ****/
 #define DISPLAY_WIDTH                     160
 #define DISPLAY_HEIGHT                    144
 
 /**** VRAM ****/
-#define VRAM_BASE                      0x8000
-#define BG_TILE_DATA0                  0x8000  // 0x8000 - 0x87FF (256 x 16-bytes tiles = 4KB)
-#define BG_TILE_DATA1                  0x8800  // 0x8800 - 0x97FF (256 x 16-bytes tiles = 4KB)
-#define BG_TILE_MAP0                   0x9800  // 0x9800 - 0x9BFF (32 x 32 1-byte tile number = 1 KB)
-#define BG_TILE_MAP1                   0x9C00  // 0x9C00 - 0x9FFF (32 x 32 1-byte tile number = 1 KB)
+#define VRAM_ADDRESS_BASE               0x8000
+#define BG_TILE_DATA0_ADDRESS_BASE      0x8000  // 0x8000 - 0x87FF (256 x 16-bytes tiles = 4KB)
+#define BG_TILE_DATA1_ADDRESS_BASE      0x8800  // 0x8800 - 0x97FF (256 x 16-bytes tiles = 4KB)
+#define BG_TILE_MAP0_ADDRESS_BASE       0x9800  // 0x9800 - 0x9BFF (32 x 32 1-byte tile number = 1 KB)
+#define BG_TILE_MAP1_ADDRESS_BASE       0x9C00  // 0x9C00 - 0x9FFF (32 x 32 1-byte tile number = 1 KB)
 
 /**** PPU timings ****/
-#define OAM_CLOCKS                               80
-#define TRANFER_PLUS_HBLANK_CLOCKS              376
-#define SCANLINE_CLOCKS                         456
-#define VBLANK_SCANLINES                         10
+#define OAM_CLOCKS                         80
+#define TRANFER_PLUS_HBLANK_CLOCKS        376
+#define SCANLINE_CLOCKS                   456
+#define VBLANK_SCANLINES                   10
 
-#define MAX_SPRITES_PER_SCANLINE                 10   // max 10 sprites per scanline
+/**** PPU modes ****/
+#define SCREEN_MODE0                        0  // in horizontal blanking period
+#define SCREEN_MODE1                        1  // in vertical blanking period
+#define SCREEN_MODE2                        2  // during OAM search
+#define SCREEN_MODE3                        3  // during pixel transfer
 
-uint32_t palette[] = { 0x009BBC0F, 0x008BAC0F, 0x00306230, 0x000F380F };
+#define MAX_SPRITES_PER_SCANLINE           10   // max 10 sprites per scanline
+
+uint32_t palette[] = 
+{ 
+	0x009BBC0F,   // lighter green
+	0x008BAC0F,   // light green
+	0x00306230,   // dark green
+	0x000F380F    // darker green
+};
 
 typedef enum PPU_State 
 { 
@@ -46,8 +53,6 @@ typedef enum PPU_State
 	PPU_STATE_HBLANK = 0, 
 	PPU_STATE_VBLANK = 1 
 } PPU_State;
-
-typedef struct PPU PPU;
 
 typedef enum Fetcher_State
 {
@@ -66,6 +71,8 @@ typedef enum Fetcher_SubState
 	FETCHER_STATE_IDLE 
 } Fetcher_Substate;
 
+typedef struct PPU PPU;
+
 struct PPU
 {
 	union
@@ -83,7 +90,7 @@ struct PPU
 		} bits;
 
 		uint8_t reg;
-	} LCDC;           // LCD control (R/W)           - 0xFF40
+	} LCDC;           // LCD control (R/W)               - 0xFF40
 
 	union
 	{
@@ -99,17 +106,17 @@ struct PPU
 		} bits;
 
 		uint8_t reg; 
-	} STAT;           // LCD status (R/W)            - 0xFF41
+	} STAT;           // LCD status (R/W)                - 0xFF41
 
-	uint8_t SCY;      // scroll Y (R/W)              - 0xFF42
-	uint8_t SCX;      // scroll X (R/W)              - 0xFF43
-	uint8_t LY;       // current scanline (R)        - 0xFF44
-	uint8_t LYC;      // LYC compare (R/W)           - 0xFF45
-	uint8_t BGP;      // background palette data (W) - 0xFF47
-	uint8_t OBJP0;    // sprite_index palette data 0 (W)   - 0xFF48
-	uint8_t OBJP1;    // sprite_index palette data 1 (W)   - 0xFF49
-	uint8_t WY;       // window y-coordinate (R/W)   - 0xFF4A
-	uint8_t WX;       // window x-coordinate (R/W)   - 0xFF4B
+	uint8_t SCY;      // scroll Y (R/W)                  - 0xFF42
+	uint8_t SCX;      // scroll X (R/W)                  - 0xFF43
+	uint8_t LY;       // current scanline (R)            - 0xFF44
+	uint8_t LYC;      // LYC compare (R/W)               - 0xFF45
+	uint8_t BGP;      // background palette data (W)     - 0xFF47
+	uint8_t OBJP0;    // sprite_index palette data 0 (W) - 0xFF48
+	uint8_t OBJP1;    // sprite_index palette data 1 (W) - 0xFF49
+	uint8_t WY;       // window y-coordinate (R/W)       - 0xFF4A
+	uint8_t WX;       // window x-coordinate (R/W)       - 0xFF4B
 
 	PPU_State state;
 
@@ -168,8 +175,8 @@ struct PPU
 };
 
 static PPU ppu;
-static uint8_t VRAM[0x2000];
-static uint8_t OAM[0x80 + 0x20];
+static uint8_t VRAM[0x2000];      // 8 KB VRAM
+static uint8_t OAM[0x80 + 0x20];  // 40 x 4 = 160 bytes
 
 void write_VRAM(uint16_t address, uint8_t data)
 {
@@ -387,7 +394,7 @@ void PPU_clock(void)
 				ppu.STAT.bits.mode_flag = ppu.STAT.bits.mode_flag & ~STAT_MODE_BITS | SCREEN_MODE3;
 
 				// fetch first tile address
-				uint16_t tile_map_base = ppu.LCDC.bits.BG_tile_map ? BG_TILE_MAP1 : BG_TILE_MAP0;
+				uint16_t tile_map_base = ppu.LCDC.bits.BG_tile_map ? BG_TILE_MAP1_ADDRESS_BASE : BG_TILE_MAP0_ADDRESS_BASE;
 				
 				//uint8_t tileX = ppu.SCX / 8 % 32;
 				//uint8_t tileY = (ppu.LY + ppu.SCY) / 8 % 32;
@@ -462,11 +469,11 @@ void PPU_clock(void)
 
 							case FETCHER_STATE_READ_TILE_LOW:  
 							{
-								uint16_t tile_data_base = ppu.LCDC.bits.BG_and_window_tileset ? BG_TILE_DATA0 : BG_TILE_DATA1;
+								uint16_t tile_data_base = ppu.LCDC.bits.BG_and_window_tileset ? BG_TILE_DATA0_ADDRESS_BASE : BG_TILE_DATA1_ADDRESS_BASE;
 
-								if (tile_data_base == BG_TILE_DATA0)
+								if (tile_data_base == BG_TILE_DATA0_ADDRESS_BASE)
 									ppu.tile_data_address = tile_data_base + ppu.tile_number * 16 + (ppu.SCY + ppu.LY) % 8 * 2;
-								else    // tile_data_base == BG_TILE_DATA1
+								else    // tile_data_base == BG_TILE_DATA1_ADDRESS_BASE
 									if (ppu.tile_number & 0x80)
 										ppu.tile_data_address = tile_data_base + 0x0800 - (UINT8_MAX + 1 - ppu.tile_number) * 16 + (ppu.SCY + ppu.LY) % 8 * 2;
 									else
@@ -530,9 +537,19 @@ void PPU_clock(void)
 							case FETCHER_STATE_READ_TILE_LOW:  
 							{
 								uint8_t sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number;
-								uint16_t sprite_tile_data_base_address = VRAM_BASE + sprite_tile_number * 16;
+								uint16_t sprite_tile_data_base_address = VRAM_ADDRESS_BASE + sprite_tile_number * 16;
 								uint8_t offset = (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16)) * 2;
-								ppu.sprite_tile_data_low = VRAM[sprite_tile_data_base_address + offset & 0x1FFF];
+								
+								if (ppu.scanline_sprites[ppu.sprite_index].attributes.bits.horizontal_flip) // sprite x-flip
+								{
+									uint8_t sprite_tile_data_low = VRAM[sprite_tile_data_base_address + offset & 0x1FFF];
+									sprite_tile_data_low = sprite_tile_data_low << 4 | sprite_tile_data_low >> 4;
+									sprite_tile_data_low = sprite_tile_data_low << 2  & 0xCC | sprite_tile_data_low >> 2 & 0x33;
+									sprite_tile_data_low = sprite_tile_data_low << 1 & 0xAA | sprite_tile_data_low >> 1 & 0x55;
+									ppu.sprite_tile_data_low = sprite_tile_data_low;
+								}
+								else
+									ppu.sprite_tile_data_low = VRAM[sprite_tile_data_base_address + offset & 0x1FFF];
 
 								ppu.fetcher_substate = FETCHER_STATE_BEFORE_READ_TILE_HIGH;
 							}
@@ -546,9 +563,20 @@ void PPU_clock(void)
 							case FETCHER_STATE_READ_TILE_HIGH:  		
 							{
 								uint8_t sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number;
-								uint16_t sprite_tile_data_base_address = VRAM_BASE + sprite_tile_number * 16;
+								uint16_t sprite_tile_data_base_address = VRAM_ADDRESS_BASE + sprite_tile_number * 16;
 								uint8_t offset = (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16)) * 2 + 1;
-								ppu.sprite_tile_data_high = VRAM[sprite_tile_data_base_address + offset & 0x1FFF];
+								
+								if (ppu.scanline_sprites[ppu.sprite_index].attributes.bits.horizontal_flip)  // sprite x-flip
+								{
+									uint8_t sprite_tile_data_high = VRAM[sprite_tile_data_base_address + offset & 0x1FFF];
+									sprite_tile_data_high = sprite_tile_data_high << 4 | sprite_tile_data_high >> 4;
+									sprite_tile_data_high = sprite_tile_data_high << 2 & 0xCC | sprite_tile_data_high >> 2 & 0x33;
+									sprite_tile_data_high = sprite_tile_data_high << 1 & 0xAA | sprite_tile_data_high >> 1 & 0x55;
+									ppu.sprite_tile_data_high = sprite_tile_data_high;
+
+								}
+								else
+									ppu.sprite_tile_data_high = VRAM[sprite_tile_data_base_address + offset & 0x1FFF];
 
 								ppu.fetcher_substate = FETCHER_STATE_PUSH_TO_FIFO;
 							}
@@ -730,7 +758,7 @@ void PPU_render_VRAM(void)
 	for (int i = 0; i < 24; i++)
 		for (int h = 0; h < 16; h++)
 		{
-			uint16_t tile_base_adddress = VRAM_BASE + (h + i * 16) * 16;
+			uint16_t tile_base_adddress = VRAM_ADDRESS_BASE + (h + i * 16) * 16;
 
 			for (int j = 0; j < 16; j += 2)
 			{
@@ -752,8 +780,8 @@ void PPU_render_VRAM(void)
 		}
 
 	// render background VRAM
-	uint16_t background_tile_map_base = ppu.LCDC.bits.BG_tile_map ? BG_TILE_MAP1 : BG_TILE_MAP0;
-	uint16_t background_tile_data_base = ppu.LCDC.bits.BG_and_window_tileset ? BG_TILE_DATA0 : BG_TILE_DATA1;
+	uint16_t background_tile_map_base = ppu.LCDC.bits.BG_tile_map ? BG_TILE_MAP1_ADDRESS_BASE : BG_TILE_MAP0_ADDRESS_BASE;
+	uint16_t background_tile_data_base = ppu.LCDC.bits.BG_and_window_tileset ? BG_TILE_DATA0_ADDRESS_BASE : BG_TILE_DATA1_ADDRESS_BASE;
 
 	for (int i = 0; i < 32; i++)
 		for (int j = 0; j < 32; j++)
@@ -762,9 +790,9 @@ void PPU_render_VRAM(void)
 
 			uint16_t tile_data_address;
 
-			if (background_tile_data_base == BG_TILE_DATA0)
+			if (background_tile_data_base == BG_TILE_DATA0_ADDRESS_BASE)
 				tile_data_address = background_tile_data_base + tile_number * 16;
-			else    // background_tile_data_base == BG_TILE_DATA1
+			else    // background_tile_data_base == BG_TILE_DATA1_ADDRESS_BASE
 				if (tile_number & 0x80)
 					tile_data_address = background_tile_data_base + 0x0800 - (UINT8_MAX + 1 - tile_number) * 16;
 				else
@@ -788,8 +816,8 @@ void PPU_render_VRAM(void)
 		}
 
 	// render window VRAM
-	uint16_t window_tile_map_base = ppu.LCDC.bits.window_tile_map ? BG_TILE_MAP1 : BG_TILE_MAP0;
-	uint16_t window_tile_data_base = ppu.LCDC.bits.BG_and_window_tileset ? BG_TILE_DATA0 : BG_TILE_DATA1;
+	uint16_t window_tile_map_base = ppu.LCDC.bits.window_tile_map ? BG_TILE_MAP1_ADDRESS_BASE : BG_TILE_MAP0_ADDRESS_BASE;
+	uint16_t window_tile_data_base = ppu.LCDC.bits.BG_and_window_tileset ? BG_TILE_DATA0_ADDRESS_BASE : BG_TILE_DATA1_ADDRESS_BASE;
 
 	for (int i = 0; i < 32; i++)
 		for (int j = 0; j < 32; j++)
@@ -798,9 +826,9 @@ void PPU_render_VRAM(void)
 
 			uint16_t tile_data_address;
 
-			if (window_tile_data_base == BG_TILE_DATA0)
+			if (window_tile_data_base == BG_TILE_DATA0_ADDRESS_BASE)
 				tile_data_address = background_tile_data_base + tile_number * 16;
-			else    // window_tile_data_base == BG_TILE_DATA1
+			else    // window_tile_data_base == BG_TILE_DATA1_ADDRESS_BASE
 				if (tile_number & 0x80)
 					tile_data_address = background_tile_data_base + 0x0800 - (UINT8_MAX + 1 - tile_number) * 16;
 				else

@@ -10,7 +10,7 @@
 
 #define OAM_BASE           0xFE00
 
-#define VRAM_BASE          0x8000
+#define VRAM_ADDRESS_BASE          0x8000
 #define VRAM_END           0x9FFF
 #define VRAM_SIZE          0x2000
 

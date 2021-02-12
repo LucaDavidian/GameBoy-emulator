@@ -17,9 +17,9 @@ int main(int argc, char *argv[])
     }
 
     //cartridge_load("Tetris");
-    cartridge_load("Dr. Mario");
+    //cartridge_load("Dr. Mario");
     //cartridge_load("Kirby's Dream Land");
-    //cartridge_load("Super Mario Land");
+    cartridge_load("Super Mario Land");
     //cartridge_load("DuckTales");
     
     /**** test ROMs ****/
