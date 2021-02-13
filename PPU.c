@@ -114,8 +114,8 @@ struct PPU
 	uint8_t LY;       // current scanline (R)            - 0xFF44
 	uint8_t LYC;      // LYC compare (R/W)               - 0xFF45
 	uint8_t BGP;      // background palette data (W)     - 0xFF47
-	uint8_t OBJP0;    // sprite_index palette data 0 (W) - 0xFF48
-	uint8_t OBJP1;    // sprite_index palette data 1 (W) - 0xFF49
+	uint8_t OBJP0;    // current_sprite palette data 0 (W) - 0xFF48
+	uint8_t OBJP1;    // current_sprite palette data 1 (W) - 0xFF49
 	uint8_t WY;       // window y-coordinate (R/W)       - 0xFF4A
 	uint8_t WX;       // window x-coordinate (R/W)       - 0xFF4B
 
@@ -153,9 +153,9 @@ struct PPU
 			{
 				uint8_t                  : 4;   
 				uint8_t OAM_palette      : 1;   // OBJ palette select (0: OBJP0, 1: OBJP1)
-				uint8_t horizontal_flip  : 1;   // flip sprite_index horizontally (0: normal, 1: flipped)
-				uint8_t vertical_flip    : 1;   // flip sprite_index vertically (0: normal, 1: flipped)
-				uint8_t priority         : 1;   // background/sprite_index priority (0: sprite_index priority, 1: background priority)
+				uint8_t horizontal_flip  : 1;   // flip current_sprite horizontally (0: normal, 1: flipped)
+				uint8_t vertical_flip    : 1;   // flip current_sprite vertically (0: normal, 1: flipped)
+				uint8_t priority         : 1;   // background/current_sprite priority (0: current_sprite priority, 1: background priority)
 			} bits;
 			uint8_t reg;
 		} attributes;
@@ -165,7 +165,6 @@ struct PPU
 	uint8_t scanline_sprite_count;       
 
 	uint8_t current_sprite;
-	uint8_t sprite_index;
 
 	uint16_t sprite_tile_map_address;
 	uint8_t sprite_tile_data_low;
@@ -316,15 +315,15 @@ void PPU_clock(void)
 				if (ppu.STAT.bits.mode2_OAM_interrupt)
 					set_int_flag(INT_LCD_STAT);
 
-				// reset sprite_index queue
+				// reset current_sprite queue
 				ppu.scanline_sprite_count = 0;
 				spriteX = 0;
 				spriteY = 0; 
 			}
 
-			if (ppu.cycle % 2 == 0)            // even cycle: read sprite_index's Y attribute
+			if (ppu.cycle % 2 == 0)            // even cycle: read current_sprite's Y attribute
 				spriteY = OAM[(ppu.cycle) / 2 * 4];
-			else                               // ppu.cycle % 2 != 0 - odd cycle: read sprite_index's X attribute and store in sprite_index queue if visible
+			else                               // ppu.cycle % 2 != 0 - odd cycle: read current_sprite's X attribute and store in current_sprite queue if visible
 			{
 				spriteX = OAM[(ppu.cycle / 2) * 4 + 1];
 
@@ -332,7 +331,7 @@ void PPU_clock(void)
 				{
 					if (ppu.LCDC.bits.sprite_size)  // 8x16 sprite size
 					{
-						if(ppu.LY >= spriteY - 16 && ppu.LY <= spriteY - 16 + 16)  // compare sprite_index's y-coordinate and LY and add sprite_index to queue if visible
+						if(ppu.LY >= spriteY - 16 && ppu.LY <= spriteY - 16 + 16)  // compare current_sprite's y-coordinate and LY and add current_sprite to queue if visible
 						{
 							ppu.scanline_sprites[ppu.scanline_sprite_count].x = spriteX;
 							ppu.scanline_sprites[ppu.scanline_sprite_count].y = spriteY;
@@ -344,7 +343,7 @@ void PPU_clock(void)
 					}
 					else  // 8x8 sprite size 
 					{
-						if (ppu.LY >= spriteY - 16 && ppu.LY < spriteY - 16 + 8)  // compare sprite_index's y-coordinate and LY and add sprite_index to queue if visible
+						if (ppu.LY >= spriteY - 16 && ppu.LY < spriteY - 16 + 8)  // compare current_sprite's y-coordinate and LY and add current_sprite to queue if visible
 							{
 								ppu.scanline_sprites[ppu.scanline_sprite_count].x = spriteX;
 								ppu.scanline_sprites[ppu.scanline_sprite_count].y = spriteY;
@@ -405,7 +404,6 @@ void PPU_clock(void)
 				uint8_t tileY = (ppu.SCY + ppu.LY) >> 3 & 0x1F;    // coarse y
 				ppu.background_tile_map_address = tile_map_base | ppu.LCDC.bits.BG_tile_map << 10 | tileY << 5 | tileX;  // tile address: 1001.1NYY.YYYX.XXXX
 
-				ppu.current_pixel = 0;
 				ppu.scrollX = ppu.SCX;
 
 				ppu.background_shift_register_low = 0x00;
@@ -419,23 +417,22 @@ void PPU_clock(void)
 				ppu.fetcher_substate = FETCHER_STATE_BEFORE_FETCH_TILE;
 
 				ppu.current_sprite = 0;
+
+				ppu.current_pixel = 0;
 			}
 			
 			// check if current pixel contains a sprite
-			if (ppu.LCDC.bits.sprites_enabled && ppu.fetcher_state != FETCHER_STATE_SPRITES) 
+			if (ppu.LCDC.bits.sprites_enabled && ppu.fetcher_state != FETCHER_STATE_SPRITES)  // TODO: sprites same x
 			{
 				for (int i = ppu.current_sprite; i < ppu.scanline_sprite_count; i++)  // sprites are sorted by ascending x-coordinate
 					if (ppu.current_pixel >= ppu.scanline_sprites[i].x - 8 && ppu.current_pixel < ppu.scanline_sprites[i].x - 8 + 8)
 					{
-						ppu.pixel_FIFO_stop = 1;  // stop pixel FIFO while fetching sprite_index tile data
+						ppu.pixel_FIFO_stop = 1;  // stop pixel FIFO while fetching current_sprite tile data
 
 						ppu.saved_substate = ppu.fetcher_substate;                // save fetcher's state
 
-						ppu.fetcher_state = FETCHER_STATE_SPRITES;                // fetch sprite_index tile - restart fetcher
+						ppu.fetcher_state = FETCHER_STATE_SPRITES;                // fetch current_sprite tile - restart fetcher
 						ppu.fetcher_substate = FETCHER_STATE_BEFORE_FETCH_TILE;
-
-						ppu.current_sprite++;
-						ppu.sprite_index = i;
 
 						break;
 					}
@@ -456,6 +453,7 @@ void PPU_clock(void)
 
 							case FETCHER_STATE_FETCH_TILE:  
 								ppu.tile_number = VRAM[ppu.background_tile_map_address & 0x1FFF];
+
 								uint16_t next_address = ppu.background_tile_map_address + 1 & 0x001F;
 								ppu.background_tile_map_address = ppu.background_tile_map_address & 0xFFE0 | next_address;
 
@@ -481,7 +479,6 @@ void PPU_clock(void)
 										ppu.tile_data_address = tile_data_base + 0x0800 + ppu.tile_number * 16 + (ppu.SCY + ppu.LY) % 8 * 2;
 
 								ppu.tile_data_low = VRAM[ppu.tile_data_address & 0x1FFF];
-
 
 								ppu.fetcher_substate = FETCHER_STATE_BEFORE_READ_TILE_HIGH;
 							}
@@ -516,7 +513,7 @@ void PPU_clock(void)
 
 						break;
 
-					case FETCHER_STATE_SPRITES:  // fetching sprite_index tile
+					case FETCHER_STATE_SPRITES:  // fetching current_sprite tile
 
 						switch (ppu.fetcher_substate)
 						{
@@ -542,48 +539,48 @@ void PPU_clock(void)
 
 								if (ppu.LCDC.bits.sprite_size)  // 8x16 sprites
 								{
-									if (ppu.scanline_sprites[ppu.sprite_index].attributes.bits.vertical_flip)  // y-flip
+									if (ppu.scanline_sprites[ppu.current_sprite].attributes.bits.vertical_flip)  // y-flip
 									{
-										if (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16) < 8)
+										if (ppu.LY - (ppu.scanline_sprites[ppu.current_sprite].y - 16) < 8)
 										{
-											sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number + 1;
-											offset = (7 - (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16))) * 2;
+											sprite_tile_number = ppu.scanline_sprites[ppu.current_sprite].tile_number + 1;
+											offset = (7 - (ppu.LY - (ppu.scanline_sprites[ppu.current_sprite].y - 16))) * 2;
 										}
 										else
 										{
-											sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number;
-											offset = (7 - (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16) - 8)) * 2;
+											sprite_tile_number = ppu.scanline_sprites[ppu.current_sprite].tile_number;
+											offset = (7 - (ppu.LY - (ppu.scanline_sprites[ppu.current_sprite].y - 16) - 8)) * 2;
 										}
 									}
 									else  // no y-flip
 									{
-										if (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16) < 8)
+										if (ppu.LY - (ppu.scanline_sprites[ppu.current_sprite].y - 16) < 8)
 										{
-											sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number;
-											offset = (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16)) * 2;
+											sprite_tile_number = ppu.scanline_sprites[ppu.current_sprite].tile_number;
+											offset = (ppu.LY - (ppu.scanline_sprites[ppu.current_sprite].y - 16)) * 2;
 										}
 										else
 										{
-											sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number + 1;
-											offset = (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16) - 8) * 2;
+											sprite_tile_number = ppu.scanline_sprites[ppu.current_sprite].tile_number + 1;
+											offset = (ppu.LY - (ppu.scanline_sprites[ppu.current_sprite].y - 16) - 8) * 2;
 										}
 									}
 								}
 								else  // 8x8 sprites
 								{
-									sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number;
+									sprite_tile_number = ppu.scanline_sprites[ppu.current_sprite].tile_number;
 
-									if (ppu.scanline_sprites[ppu.sprite_index].attributes.bits.vertical_flip)     // y-flip
-										offset = (7 - (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16))) * 2;
+									if (ppu.scanline_sprites[ppu.current_sprite].attributes.bits.vertical_flip)     // y-flip
+										offset = (7 - (ppu.LY - (ppu.scanline_sprites[ppu.current_sprite].y - 16))) * 2;
 									else                                                                          // no y-flip
-										offset = (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16)) * 2;
+										offset = (ppu.LY - (ppu.scanline_sprites[ppu.current_sprite].y - 16)) * 2;
 								}
 
 								uint16_t sprite_tile_data_base_address = SPRITE_TILE_DATA_ADDRESS_BASE + sprite_tile_number * 16;
 
 								ppu.sprite_tile_data_low = VRAM[sprite_tile_data_base_address + offset & 0x1FFF];
 
-								if (ppu.scanline_sprites[ppu.sprite_index].attributes.bits.horizontal_flip) // sprite x-flip
+								if (ppu.scanline_sprites[ppu.current_sprite].attributes.bits.horizontal_flip) // sprite x-flip
 								{
 									ppu.sprite_tile_data_low = ppu.sprite_tile_data_low << 4 | ppu.sprite_tile_data_low >> 4;
 									ppu.sprite_tile_data_low = ppu.sprite_tile_data_low << 2  & 0xCC | ppu.sprite_tile_data_low >> 2 & 0x33;
@@ -606,48 +603,48 @@ void PPU_clock(void)
 
 								if (ppu.LCDC.bits.sprite_size)  // 8x16 sprites
 								{
-									if (ppu.scanline_sprites[ppu.sprite_index].attributes.bits.vertical_flip)  // y-flip
+									if (ppu.scanline_sprites[ppu.current_sprite].attributes.bits.vertical_flip)  // y-flip
 									{
-										if (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16) < 8)
+										if (ppu.LY - (ppu.scanline_sprites[ppu.current_sprite].y - 16) < 8)
 										{
-											sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number + 1;
-											offset = (7 - (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16))) * 2 + 1;
+											sprite_tile_number = ppu.scanline_sprites[ppu.current_sprite].tile_number + 1;
+											offset = (7 - (ppu.LY - (ppu.scanline_sprites[ppu.current_sprite].y - 16))) * 2 + 1;
 										}
 										else
 										{
-											sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number;
-											offset = (7 - (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16) - 8)) * 2 + 1;
+											sprite_tile_number = ppu.scanline_sprites[ppu.current_sprite].tile_number;
+											offset = (7 - (ppu.LY - (ppu.scanline_sprites[ppu.current_sprite].y - 16) - 8)) * 2 + 1;
 										}
 									}
 									else  // no y-flip
 									{
-										if (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16) < 8)
+										if (ppu.LY - (ppu.scanline_sprites[ppu.current_sprite].y - 16) < 8)
 										{
-											sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number;
-											offset = (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16)) * 2 + 1;
+											sprite_tile_number = ppu.scanline_sprites[ppu.current_sprite].tile_number;
+											offset = (ppu.LY - (ppu.scanline_sprites[ppu.current_sprite].y - 16)) * 2 + 1;
 										}
 										else
 										{
-											sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number + 1;
-											offset = (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16) - 8) * 2 + 1;
+											sprite_tile_number = ppu.scanline_sprites[ppu.current_sprite].tile_number + 1;
+											offset = (ppu.LY - (ppu.scanline_sprites[ppu.current_sprite].y - 16) - 8) * 2 + 1;
 										}
 									}
 								}
 								else  // 8x8 sprites
 								{
-									sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number;
+									sprite_tile_number = ppu.scanline_sprites[ppu.current_sprite].tile_number;
 
-									if (ppu.scanline_sprites[ppu.sprite_index].attributes.bits.vertical_flip)     // y-flip
-										offset = (7 - (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16))) * 2 + 1;
+									if (ppu.scanline_sprites[ppu.current_sprite].attributes.bits.vertical_flip)     // y-flip
+										offset = (7 - (ppu.LY - (ppu.scanline_sprites[ppu.current_sprite].y - 16))) * 2 + 1;
 									else                                                                          // no y-flip
-										offset = (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16)) * 2 + 1;
+										offset = (ppu.LY - (ppu.scanline_sprites[ppu.current_sprite].y - 16)) * 2 + 1;
 								}
 
 								uint16_t sprite_tile_data_base_address = SPRITE_TILE_DATA_ADDRESS_BASE + sprite_tile_number * 16;							
 
 								ppu.sprite_tile_data_high = VRAM[sprite_tile_data_base_address + offset & 0x1FFF];
 
-								if (ppu.scanline_sprites[ppu.sprite_index].attributes.bits.horizontal_flip)  // sprite x-flip
+								if (ppu.scanline_sprites[ppu.current_sprite].attributes.bits.horizontal_flip)  // sprite x-flip
 								{
 									ppu.sprite_tile_data_high = ppu.sprite_tile_data_high << 4 | ppu.sprite_tile_data_high >> 4;
 									ppu.sprite_tile_data_high = ppu.sprite_tile_data_high << 2 & 0xCC | ppu.sprite_tile_data_high >> 2 & 0x33;
@@ -660,9 +657,11 @@ void PPU_clock(void)
 								break;
 
 							case FETCHER_STATE_PUSH_TO_FIFO:
-								ppu.sprite_shift_register_low[ppu.sprite_index] = ppu.sprite_tile_data_low;
-								ppu.sprite_shift_register_high[ppu.sprite_index] = ppu.sprite_tile_data_high;
-
+								ppu.sprite_shift_register_low[ppu.current_sprite] = ppu.sprite_tile_data_low;
+								ppu.sprite_shift_register_high[ppu.current_sprite] = ppu.sprite_tile_data_high;
+								
+								ppu.current_sprite++;
+								
 								//ppu.fetcher_state = FETCHER_STATE_BACKGROUND;  // restore fetcher's state
 								//ppu.fetcher_substate = ppu.saved_substate;
 
@@ -710,19 +709,35 @@ void PPU_clock(void)
 						}
 
 					uint8_t pixel_color = 0;
+					uint8_t pixel_opaque = 0;
 
 					if (ppu.LCDC.bits.sprites_enabled && overlapping_sprites_count)
-						if (ppu.scanline_sprites[overlapping_sprites[0]].attributes.bits.priority == 1 && background_pixel_color_index != 0)  // if sprite_index priority == 1 the sprite_index is drawn behind background color index 1,2 and 3 (but in front of background color index 0)
-							pixel_color = background_pixel_color;
-						else
+					{
+						for (int i = 0; i < overlapping_sprites_count; i++)
+						{
+							if (ppu.scanline_sprites[overlapping_sprites[i]].attributes.bits.priority == 1 && background_pixel_color_index != 0)  // if current_sprite priority == 1 the current_sprite is drawn behind background color index 1,2 and 3 (but in front of background color index 0)
+							{
+								pixel_color = background_pixel_color;
+								pixel_opaque = 1;
+								break;
+							}
+								
+						}
+
+						if (!pixel_opaque)
+						{
 							for (int i = 0; i < overlapping_sprites_count; i++)
 								if (sprite_pixel_color_index[i] != 0)
 								{
 									pixel_color = sprite_pixel_color[i];
+									pixel_opaque = 1;
 									break;
 								}
-								else
-									pixel_color = background_pixel_color;
+						}
+
+						if (!pixel_opaque)
+							pixel_color = background_pixel_color;
+					}
 					else
 						pixel_color = background_pixel_color;
 
