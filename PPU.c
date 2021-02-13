@@ -19,6 +19,7 @@
 
 /**** VRAM ****/
 #define VRAM_ADDRESS_BASE               0x8000
+#define SPRITE_TILE_DATA_ADDRESS_BASE   0x8000
 #define BG_TILE_DATA0_ADDRESS_BASE      0x8000  // 0x8000 - 0x87FF (256 x 16-bytes tiles = 4KB)
 #define BG_TILE_DATA1_ADDRESS_BASE      0x8800  // 0x8800 - 0x97FF (256 x 16-bytes tiles = 4KB)
 #define BG_TILE_MAP0_ADDRESS_BASE       0x9800  // 0x9800 - 0x9BFF (32 x 32 1-byte tile number = 1 KB)
@@ -80,8 +81,8 @@ struct PPU
 		struct
 		{
 			uint8_t BG_enabled             : 1;    // enable background rendering (0: disabled, 1: enabled)
-			uint8_t sprites_enabled        : 1;    // enable sprite_index rendering (0: disabled, 1: enabled)
-			uint8_t sprite_size            : 1;    // select sprite_index size (0: 8x8 px, 1: 8x16 px)
+			uint8_t sprites_enabled        : 1;    // enable sprite rendering (0: disabled, 1: enabled)
+			uint8_t sprite_size            : 1;    // select sprite size (0: 8x8 px, 1: 8x16 px)
 			uint8_t BG_tile_map            : 1;    // select VRAM area to fetch background tile numbers from (0: 0x9800 - 0x9BFF, 1: 0x9C00 - 0x9FFF) - each area is 1 KB = 32 x 32 tiles 
 			uint8_t BG_and_window_tileset  : 1;    // select VRAM area to fetch background and window tile data from (0: 0x8800 - 0x0x97FF, 1: 0x8000 - 0x8FFF) - each area is 4 KB = 256 16-bytes tiles
 			uint8_t window_enable          : 1;    // enable window rendering
@@ -98,10 +99,10 @@ struct PPU
 		{
 			uint8_t mode_flag              : 2;    // current mode (read-only) (0: HBLANK, 1: VBLANK, 2: OAM search, 3: pixel transfer) - CPU can access VRAM only in mode 0, 1 and 2; it can access OAM in mode 0 and 1 
 			uint8_t coincidence_flag       : 1;    // comparison signal (read-only) (0: LY != LYC, 1: LY == LYC)
-			uint8_t mode0_HBLANK_interrupt : 1;    // enable HBLANK interrupt (0: disabled, 1: enabled)
-			uint8_t mode1_VBLANK_interrupt : 1;    // enable VBLANK interrupt (0: disabled, 1: enabled)
-			uint8_t mode2_OAM_interrupt    : 1;    // enable OAM interrupt (0: disabled, 1: enabled)
-			uint8_t LYC_interrupt          : 1;    // enable LYC interrupt (0: disabled, 1: enabled)
+			uint8_t mode0_HBLANK_interrupt : 1;    // enable STAT-HBLANK interrupt (0: disabled, 1: enabled)
+			uint8_t mode1_VBLANK_interrupt : 1;    // enable STAT-VBLANK interrupt (0: disabled, 1: enabled)
+			uint8_t mode2_OAM_interrupt    : 1;    // enable STAT-OAM interrupt (0: disabled, 1: enabled)
+			uint8_t LYC_interrupt          : 1;    // enable STAT-LYC interrupt (0: disabled, 1: enabled)
 			uint8_t unused                 : 1;    
 		} bits;
 
@@ -120,7 +121,7 @@ struct PPU
 
 	PPU_State state;
 
-	uint16_t cycle;          // @ 4.194304 MHz
+	uint16_t cycle;          // current PPU cycle (clocked @ 4.194304 MHz)
 	uint8_t current_pixel;   // current pixel being drawn 
 	uint8_t scrollX;
 
@@ -129,9 +130,8 @@ struct PPU
 	Fetcher_Substate saved_substate;
 
 	uint16_t background_tile_map_address;
-	uint16_t sprite_tile_map_address;
-	uint8_t tile_number;
 	uint16_t tile_data_address;
+	uint8_t tile_number;
 	uint8_t tile_data_low;
 	uint8_t tile_data_high;
 
@@ -167,6 +167,7 @@ struct PPU
 	uint8_t current_sprite;
 	uint8_t sprite_index;
 
+	uint16_t sprite_tile_map_address;
 	uint8_t sprite_tile_data_low;
 	uint8_t sprite_tile_data_high;
 
@@ -190,10 +191,10 @@ uint8_t read_VRAM(uint16_t address)
 {
 	address &= 0x1FFF;
 
-	if (ppu.STAT.bits.mode_flag != SCREEN_MODE3)
+	//if (ppu.STAT.bits.mode_flag != SCREEN_MODE3)
 		return VRAM[address];
-	else
-		return 0xFF;
+	//else
+	//	return 0xFF;
 }
 
 void write_OAM(uint16_t address, uint8_t data)
@@ -329,19 +330,19 @@ void PPU_clock(void)
 
 				if (ppu.scanline_sprite_count < 10)  // max 10 sprites on each scanline, other sprites are ignored
 				{
-					if (ppu.LCDC.bits.sprite_size)  // 8x16 sprite_index size
+					if (ppu.LCDC.bits.sprite_size)  // 8x16 sprite size
 					{
 						if(ppu.LY >= spriteY - 16 && ppu.LY <= spriteY - 16 + 16)  // compare sprite_index's y-coordinate and LY and add sprite_index to queue if visible
 						{
 							ppu.scanline_sprites[ppu.scanline_sprite_count].x = spriteX;
 							ppu.scanline_sprites[ppu.scanline_sprite_count].y = spriteY;
-							ppu.scanline_sprites[ppu.scanline_sprite_count].tile_number = OAM[ppu.cycle * 4 + 2];
-							ppu.scanline_sprites[ppu.scanline_sprite_count].attributes.reg = OAM[ppu.cycle * 4 + 3];
+							ppu.scanline_sprites[ppu.scanline_sprite_count].tile_number = OAM[(ppu.cycle / 2) * 4 + 2] & 0xFE;  // ignore bit0 of tile number in 8x16 mode
+							ppu.scanline_sprites[ppu.scanline_sprite_count].attributes.reg = OAM[(ppu.cycle / 2) * 4 + 3];
 
 							ppu.scanline_sprite_count++;
 						}
 					}
-					else  // 8x8 sprite_index size 
+					else  // 8x8 sprite size 
 					{
 						if (ppu.LY >= spriteY - 16 && ppu.LY < spriteY - 16 + 8)  // compare sprite_index's y-coordinate and LY and add sprite_index to queue if visible
 							{
@@ -420,7 +421,7 @@ void PPU_clock(void)
 				ppu.current_sprite = 0;
 			}
 			
-			// check if current pixel contains sprite_index  TODO 8x16 SPRITES!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+			// check if current pixel contains a sprite
 			if (ppu.LCDC.bits.sprites_enabled && ppu.fetcher_state != FETCHER_STATE_SPRITES) 
 			{
 				for (int i = ppu.current_sprite; i < ppu.scanline_sprite_count; i++)  // sprites are sorted by ascending x-coordinate
@@ -536,27 +537,58 @@ void PPU_clock(void)
 
 							case FETCHER_STATE_READ_TILE_LOW:  
 							{
-								uint8_t sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number;
-								uint16_t sprite_tile_data_base_address = VRAM_ADDRESS_BASE + sprite_tile_number * 16;
-								
+								uint8_t sprite_tile_number;	
 								uint8_t offset;
-								
-								if (ppu.scanline_sprites[ppu.sprite_index].attributes.bits.vertical_flip)  // sprite y-flip
-									offset = (7 - ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16)) * 2;
-								else
-									offset = (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16)) * 2;
 
-								uint8_t sprite_tile_data_low = VRAM[sprite_tile_data_base_address + offset & 0x1FFF];
+								if (ppu.LCDC.bits.sprite_size)  // 8x16 sprites
+								{
+									if (ppu.scanline_sprites[ppu.sprite_index].attributes.bits.vertical_flip)  // y-flip
+									{
+										if (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16) < 8)
+										{
+											sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number + 1;
+											offset = (7 - (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16))) * 2;
+										}
+										else
+										{
+											sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number;
+											offset = (7 - (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16) - 8)) * 2;
+										}
+									}
+									else  // no y-flip
+									{
+										if (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16) < 8)
+										{
+											sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number;
+											offset = (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16)) * 2;
+										}
+										else
+										{
+											sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number + 1;
+											offset = (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16) - 8) * 2;
+										}
+									}
+								}
+								else  // 8x8 sprites
+								{
+									sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number;
+
+									if (ppu.scanline_sprites[ppu.sprite_index].attributes.bits.vertical_flip)     // y-flip
+										offset = (7 - (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16))) * 2;
+									else                                                                          // no y-flip
+										offset = (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16)) * 2;
+								}
+
+								uint16_t sprite_tile_data_base_address = SPRITE_TILE_DATA_ADDRESS_BASE + sprite_tile_number * 16;
+
+								ppu.sprite_tile_data_low = VRAM[sprite_tile_data_base_address + offset & 0x1FFF];
 
 								if (ppu.scanline_sprites[ppu.sprite_index].attributes.bits.horizontal_flip) // sprite x-flip
 								{
-									sprite_tile_data_low = sprite_tile_data_low << 4 | sprite_tile_data_low >> 4;
-									sprite_tile_data_low = sprite_tile_data_low << 2  & 0xCC | sprite_tile_data_low >> 2 & 0x33;
-									sprite_tile_data_low = sprite_tile_data_low << 1 & 0xAA | sprite_tile_data_low >> 1 & 0x55;
-									ppu.sprite_tile_data_low = sprite_tile_data_low;
+									ppu.sprite_tile_data_low = ppu.sprite_tile_data_low << 4 | ppu.sprite_tile_data_low >> 4;
+									ppu.sprite_tile_data_low = ppu.sprite_tile_data_low << 2  & 0xCC | ppu.sprite_tile_data_low >> 2 & 0x33;
+									ppu.sprite_tile_data_low = ppu.sprite_tile_data_low << 1 & 0xAA | ppu.sprite_tile_data_low >> 1 & 0x55;
 								}
-								else
-									ppu.sprite_tile_data_low = sprite_tile_data_low;
 
 								ppu.fetcher_substate = FETCHER_STATE_BEFORE_READ_TILE_HIGH;
 							}
@@ -569,27 +601,58 @@ void PPU_clock(void)
 
 							case FETCHER_STATE_READ_TILE_HIGH:  		
 							{
-								uint8_t sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number;
-								uint16_t sprite_tile_data_base_address = VRAM_ADDRESS_BASE + sprite_tile_number * 16;
-								
+								uint8_t sprite_tile_number;
 								uint8_t offset;
-								
-								if (ppu.scanline_sprites[ppu.sprite_index].attributes.bits.vertical_flip)  // sprite y-flip
-									offset = (7 - ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16)) * 2 + 1;
-								else
-									offset = (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16)) * 2 + 1;
 
-								uint8_t sprite_tile_data_high = VRAM[sprite_tile_data_base_address + offset & 0x1FFF];
+								if (ppu.LCDC.bits.sprite_size)  // 8x16 sprites
+								{
+									if (ppu.scanline_sprites[ppu.sprite_index].attributes.bits.vertical_flip)  // y-flip
+									{
+										if (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16) < 8)
+										{
+											sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number + 1;
+											offset = (7 - (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16))) * 2 + 1;
+										}
+										else
+										{
+											sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number;
+											offset = (7 - (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16) - 8)) * 2 + 1;
+										}
+									}
+									else  // no y-flip
+									{
+										if (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16) < 8)
+										{
+											sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number;
+											offset = (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16)) * 2 + 1;
+										}
+										else
+										{
+											sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number + 1;
+											offset = (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16) - 8) * 2 + 1;
+										}
+									}
+								}
+								else  // 8x8 sprites
+								{
+									sprite_tile_number = ppu.scanline_sprites[ppu.sprite_index].tile_number;
+
+									if (ppu.scanline_sprites[ppu.sprite_index].attributes.bits.vertical_flip)     // y-flip
+										offset = (7 - (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16))) * 2 + 1;
+									else                                                                          // no y-flip
+										offset = (ppu.LY - (ppu.scanline_sprites[ppu.sprite_index].y - 16)) * 2 + 1;
+								}
+
+								uint16_t sprite_tile_data_base_address = SPRITE_TILE_DATA_ADDRESS_BASE + sprite_tile_number * 16;							
+
+								ppu.sprite_tile_data_high = VRAM[sprite_tile_data_base_address + offset & 0x1FFF];
 
 								if (ppu.scanline_sprites[ppu.sprite_index].attributes.bits.horizontal_flip)  // sprite x-flip
 								{
-									sprite_tile_data_high = sprite_tile_data_high << 4 | sprite_tile_data_high >> 4;
-									sprite_tile_data_high = sprite_tile_data_high << 2 & 0xCC | sprite_tile_data_high >> 2 & 0x33;
-									sprite_tile_data_high = sprite_tile_data_high << 1 & 0xAA | sprite_tile_data_high >> 1 & 0x55;
-									ppu.sprite_tile_data_high = sprite_tile_data_high;
+									ppu.sprite_tile_data_high = ppu.sprite_tile_data_high << 4 | ppu.sprite_tile_data_high >> 4;
+									ppu.sprite_tile_data_high = ppu.sprite_tile_data_high << 2 & 0xCC | ppu.sprite_tile_data_high >> 2 & 0x33;
+									ppu.sprite_tile_data_high = ppu.sprite_tile_data_high << 1 & 0xAA | ppu.sprite_tile_data_high >> 1 & 0x55;
 								}
-								else
-									ppu.sprite_tile_data_high = sprite_tile_data_high;
 
 								ppu.fetcher_substate = FETCHER_STATE_PUSH_TO_FIFO;
 							}
@@ -633,6 +696,8 @@ void PPU_clock(void)
 					}
 					
 					uint8_t pixel_color;
+
+					//TODO::::::::ppu.LCDC.bits.sprites_enabled ?
 
 					int sprite_pixel_opaque = 0;
 					if (ppu.scanline_sprites[0].attributes.bits.priority == 1 && background_pixel_color_index != 0)  // if sprite_index priority == 1 the sprite_index is drawn behind background color index 1,2 and 3 (but in front of background color index 0)

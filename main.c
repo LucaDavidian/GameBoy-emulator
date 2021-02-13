@@ -23,7 +23,7 @@ int main(int argc, char *argv[])
     //cartridge_load("DuckTales");
     
     /**** test ROMs ****/
-    //cartridge_load("Test ROMs/cpu_instrs/individual/cpu_instrs");                 // TODO: MBC1
+    //cartridge_load("Test ROMs/cpu_instrs/individual/cpu_instrs");                
     //cartridge_load("Test ROMs/cpu_instrs/individual/01-special");                 // OK
     //cartridge_load("Test ROMs/cpu_instrs/individual/02-interrupts");              // OK
     //cartridge_load("Test ROMs/cpu_instrs/individual/03-op sp,hl");                // OK
@@ -43,6 +43,9 @@ int main(int argc, char *argv[])
     //cartridge_load("Test ROMs/mem_timing/individual/01-read_timing");
     //cartridge_load("Test ROMs/mem_timing/individual/02-write_timing");            // OK
     //cartridge_load("Test ROMs/mem_timing/individual/03-modify_timing");
+
+    //cartridge_load("Test ROMs/dmg_sound/rom_singles/01-registers");
+    //cartridge_load("Test ROMs/PPU/dmg-acid2");
 
     /**** initialize emulator's systems ****/
     CPU_init(&cpu);
