@@ -404,7 +404,7 @@ void PPU_clock(void)
 				uint8_t tileY = (ppu.SCY + ppu.LY) >> 3 & 0x1F;    // coarse y
 				ppu.background_tile_map_address = tile_map_base | ppu.LCDC.bits.BG_tile_map << 10 | tileY << 5 | tileX;  // tile address: 1001.1NYY.YYYX.XXXX
 
-				ppu.scrollX = ppu.SCX;
+				ppu.scrollX = ppu.SCX % 8;
 
 				ppu.background_shift_register_low = 0x00;
 				ppu.background_shift_register_high = 0x00;
@@ -684,7 +684,9 @@ void PPU_clock(void)
 			/**** pixel FIFO ****/
 			if (!ppu.pixel_FIFO_stop && !ppu.pixel_FIFO_empty)
 			{
-				if (ppu.scrollX == 0)
+				if (ppu.scrollX != 0)
+					ppu.scrollX--;
+				else
 				{
 					// background pixel color 
 					uint8_t background_pixel_color_index = ppu.background_shift_register_low >> 7 & 0x01 | (ppu.background_shift_register_high >> 7 & 0x01) << 1;
@@ -714,18 +716,14 @@ void PPU_clock(void)
 					if (ppu.LCDC.bits.sprites_enabled && overlapping_sprites_count)
 					{
 						for (int i = 0; i < overlapping_sprites_count; i++)
-						{
 							if (ppu.scanline_sprites[overlapping_sprites[i]].attributes.bits.priority == 1 && background_pixel_color_index != 0)  // if current_sprite priority == 1 the current_sprite is drawn behind background color index 1,2 and 3 (but in front of background color index 0)
 							{
 								pixel_color = background_pixel_color;
 								pixel_opaque = 1;
 								break;
 							}
-								
-						}
 
 						if (!pixel_opaque)
-						{
 							for (int i = 0; i < overlapping_sprites_count; i++)
 								if (sprite_pixel_color_index[i] != 0)
 								{
@@ -733,7 +731,6 @@ void PPU_clock(void)
 									pixel_opaque = 1;
 									break;
 								}
-						}
 
 						if (!pixel_opaque)
 							pixel_color = background_pixel_color;
@@ -752,8 +749,6 @@ void PPU_clock(void)
 						ppu.state = PPU_STATE_HBLANK;
 					}
 				}
-				else
-					ppu.scrollX--;
 
 				ppu.background_shift_register_low <<= 1;
 				ppu.background_shift_register_high <<= 1;
