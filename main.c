@@ -18,11 +18,12 @@ int main(int argc, char *argv[])
 
     //cartridge_load("Tetris");
     //cartridge_load("Dr. Mario");
-    cartridge_load("Kirby's Dream Land");
+    //cartridge_load("Kirby's Dream Land");
     //cartridge_load("Super Mario Land");
     //cartridge_load("DuckTales");
+    //cartridge_load("Tennis");
     
-    /**** test ROMs ****/
+    /**** CPU test ROMs ****/
     //cartridge_load("Test ROMs/cpu_instrs/individual/cpu_instrs");                
     //cartridge_load("Test ROMs/cpu_instrs/individual/01-special");                 // OK
     //cartridge_load("Test ROMs/cpu_instrs/individual/02-interrupts");              // OK
@@ -35,17 +36,17 @@ int main(int argc, char *argv[])
     //cartridge_load("Test ROMs/cpu_instrs/individual/09-op r,r");                  // OK
     //cartridge_load("Test ROMs/cpu_instrs/individual/10-bit ops");                 // OK
     //cartridge_load("Test ROMs/cpu_instrs/individual/11-op a,(hl)");               // OK
-
     //cartridge_load("Test ROMs/instr_timing/instr_timing");                        // OK
-
-    //cartridge_load("Test ROMs/interrupt_time/interrupt_time");             
-    
+    //cartridge_load("Test ROMs/interrupt_time/interrupt_time");              
     //cartridge_load("Test ROMs/mem_timing/individual/01-read_timing");
     //cartridge_load("Test ROMs/mem_timing/individual/02-write_timing");            // OK
     //cartridge_load("Test ROMs/mem_timing/individual/03-modify_timing");
 
+    /**** APU test ROM ****/
     //cartridge_load("Test ROMs/dmg_sound/rom_singles/01-registers");
-    //cartridge_load("Test ROMs/PPU/dmg-acid2");
+
+    /**** PPU test ROM ****/
+    cartridge_load("Test ROMs/PPU/dmg-acid2");
 
     /**** initialize emulator's systems ****/
     CPU_init(&cpu);

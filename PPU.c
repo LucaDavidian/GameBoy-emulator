@@ -425,7 +425,7 @@ void PPU_clock(void)
 			if (ppu.LCDC.bits.sprites_enabled && ppu.fetcher_state != FETCHER_STATE_SPRITES) 
 			{
 				for (int i = ppu.current_sprite; i < ppu.scanline_sprite_count; i++)  // sprites are sorted by ascending x-coordinate
-					if (ppu.current_pixel >= ppu.scanline_sprites[i].x - 8 && ppu.current_pixel <= ppu.scanline_sprites[i].x - 8 + 8)
+					if (ppu.current_pixel >= ppu.scanline_sprites[i].x - 8 && ppu.current_pixel < ppu.scanline_sprites[i].x - 8 + 8)
 					{
 						ppu.pixel_FIFO_stop = 1;  // stop pixel FIFO while fetching sprite_index tile data
 
@@ -663,6 +663,14 @@ void PPU_clock(void)
 								ppu.sprite_shift_register_low[ppu.sprite_index] = ppu.sprite_tile_data_low;
 								ppu.sprite_shift_register_high[ppu.sprite_index] = ppu.sprite_tile_data_high;
 
+								//ppu.fetcher_state = FETCHER_STATE_BACKGROUND;  // restore fetcher's state
+								//ppu.fetcher_substate = ppu.saved_substate;
+
+								//ppu.pixel_FIFO_stop = 0;
+								ppu.fetcher_substate = FETCHER_STATE_IDLE;
+								break;
+
+							case FETCHER_STATE_IDLE:
 								ppu.fetcher_state = FETCHER_STATE_BACKGROUND;  // restore fetcher's state
 								ppu.fetcher_substate = ppu.saved_substate;
 
@@ -675,7 +683,7 @@ void PPU_clock(void)
 				}
 				
 			/**** pixel FIFO ****/
-			if (!ppu.pixel_FIFO_stop)
+			if (!ppu.pixel_FIFO_stop && !ppu.pixel_FIFO_empty)
 			{
 				if (ppu.scrollX == 0)
 				{
@@ -684,35 +692,38 @@ void PPU_clock(void)
 					uint8_t background_pixel_color = ppu.BGP >> background_pixel_color_index * 2 & 0x03;
 
 					// sprite pixel color
-					uint8_t sprite_pixel_color_index[10];
-					uint8_t sprite_pixel_color[10];
+					uint8_t sprite_pixel_color_index[10] = { 0 };
+					uint8_t sprite_pixel_color[10] = { 0 };
+
+					uint8_t overlapping_sprites[10];
+					uint8_t overlapping_sprites_count = 0;
 
 					for (int i = 0; i < ppu.scanline_sprite_count; i++)
-					{
-						sprite_pixel_color_index[i] = ppu.sprite_shift_register_low[i] >> 7 & 0x01 | (ppu.sprite_shift_register_high[i] >> 7 & 0x01) << 1;
+						if (ppu.current_pixel >= ppu.scanline_sprites[i].x - 8 && ppu.current_pixel < ppu.scanline_sprites[i].x - 8 + 8)
+						{
+							sprite_pixel_color_index[overlapping_sprites_count] = ppu.sprite_shift_register_low[i] >> 7 & 0x01 | (ppu.sprite_shift_register_high[i] >> 7 & 0x01) << 1;
 
-						uint8_t pixel_palette = ppu.scanline_sprites[i].attributes.bits.OAM_palette ? ppu.OBJP1 : ppu.OBJP0;
-						sprite_pixel_color[i] = pixel_palette >> sprite_pixel_color_index[i] * 2 & 0x03;
-					}
-					
-					uint8_t pixel_color;
+							uint8_t pixel_palette = ppu.scanline_sprites[i].attributes.bits.OAM_palette ? ppu.OBJP1 : ppu.OBJP0;
+							sprite_pixel_color[overlapping_sprites_count] = pixel_palette >> sprite_pixel_color_index[overlapping_sprites_count] * 2 & 0x03;
 
-					//TODO::::::::ppu.LCDC.bits.sprites_enabled ?
+							overlapping_sprites[overlapping_sprites_count++] = i;
+						}
 
-					int sprite_pixel_opaque = 0;
-					if (ppu.scanline_sprites[0].attributes.bits.priority == 1 && background_pixel_color_index != 0)  // if sprite_index priority == 1 the sprite_index is drawn behind background color index 1,2 and 3 (but in front of background color index 0)
-						pixel_color = background_pixel_color;
+					uint8_t pixel_color = 0;
+
+					if (ppu.LCDC.bits.sprites_enabled && overlapping_sprites_count)
+						if (ppu.scanline_sprites[overlapping_sprites[0]].attributes.bits.priority == 1 && background_pixel_color_index != 0)  // if sprite_index priority == 1 the sprite_index is drawn behind background color index 1,2 and 3 (but in front of background color index 0)
+							pixel_color = background_pixel_color;
+						else
+							for (int i = 0; i < overlapping_sprites_count; i++)
+								if (sprite_pixel_color_index[i] != 0)
+								{
+									pixel_color = sprite_pixel_color[i];
+									break;
+								}
+								else
+									pixel_color = background_pixel_color;
 					else
-					{
-						for (int i = 0; i < ppu.scanline_sprite_count; i++)
-							if (sprite_pixel_color_index[i] != 0)
-							{
-								pixel_color = sprite_pixel_color[i];
-								sprite_pixel_opaque = 1;
-								break;
-							}
-					}
-					if (!sprite_pixel_opaque)
 						pixel_color = background_pixel_color;
 
 					// draw pixel
