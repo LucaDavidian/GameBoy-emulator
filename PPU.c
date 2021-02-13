@@ -331,7 +331,7 @@ void PPU_clock(void)
 				{
 					if (ppu.LCDC.bits.sprite_size)  // 8x16 sprite size
 					{
-						if(ppu.LY >= spriteY - 16 && ppu.LY <= spriteY - 16 + 16)  // compare current_sprite's y-coordinate and LY and add current_sprite to queue if visible
+						if(ppu.LY >= spriteY - 16 && ppu.LY < spriteY - 16 + 16)  // compare current_sprite's y-coordinate and LY and add current_sprite to queue if visible
 						{
 							ppu.scanline_sprites[ppu.scanline_sprite_count].x = spriteX;
 							ppu.scanline_sprites[ppu.scanline_sprite_count].y = spriteY;
@@ -410,8 +410,8 @@ void PPU_clock(void)
 				ppu.background_shift_register_high = 0x00;
 
 				ppu.pixel_FIFO_stop = 1;
-				ppu.pixel_FIFO_empty = 1;
 				ppu.pixel_FIFO_shift = 8;
+				ppu.pixel_FIFO_empty = 1;
 
 				ppu.fetcher_state = FETCHER_STATE_BACKGROUND;
 				ppu.fetcher_substate = FETCHER_STATE_BEFORE_FETCH_TILE;
