@@ -57,7 +57,7 @@ typedef enum PPU_State
 
 typedef enum Fetcher_State
 {
-	FETCHER_STATE_BACKGROUND, FETCHER_STATE_SPRITES
+	FETCHER_STATE_BACKGROUND, FETCHER_STATE_WINDOW, FETCHER_STATE_SPRITES
 } Fetcher_State;
 
 typedef enum Fetcher_SubState
@@ -127,9 +127,10 @@ struct PPU
 
 	Fetcher_State fetcher_state;
 	Fetcher_Substate fetcher_substate;
+	Fetcher_State saved_state;
 	Fetcher_Substate saved_substate;
 
-	uint16_t background_tile_map_address;
+	uint16_t tile_map_address;
 	uint16_t tile_data_address;
 	uint8_t tile_number;
 	uint8_t tile_data_low;
@@ -394,15 +395,15 @@ void PPU_clock(void)
 				ppu.STAT.bits.mode_flag = ppu.STAT.bits.mode_flag & ~STAT_MODE_BITS | SCREEN_MODE3;
 
 				// fetch first tile address
-				uint16_t tile_map_base = ppu.LCDC.bits.BG_tile_map ? BG_TILE_MAP1_ADDRESS_BASE : BG_TILE_MAP0_ADDRESS_BASE;
-				
+
+				//uint16_t tile_map_base = ppu.LCDC.bits.BG_tile_map ? BG_TILE_MAP1_ADDRESS_BASE : BG_TILE_MAP0_ADDRESS_BASE;				
 				//uint8_t tileX = ppu.SCX / 8 % 32;
 				//uint8_t tileY = (ppu.LY + ppu.SCY) / 8 % 32;
-				//ppu.background_tile_map_address = tile_map_base + tileX + tileY * 32;
+				//ppu.tile_map_address = tile_map_base + tileX + tileY * 32;
 
 				uint8_t tileX = ppu.SCX >> 3 & 0x1F;               // coarse x
 				uint8_t tileY = (ppu.SCY + ppu.LY) >> 3 & 0x1F;    // coarse y
-				ppu.background_tile_map_address = tile_map_base | ppu.LCDC.bits.BG_tile_map << 10 | tileY << 5 | tileX;  // tile address: 1001.1NYY.YYYX.XXXX
+				ppu.tile_map_address = 0x9800 | ppu.LCDC.bits.BG_tile_map << 10 | tileY << 5 | tileX;  // tile address: 1001.1NYY.YYYX.XXXX
 
 				ppu.scrollX = ppu.SCX % 8;
 
@@ -423,12 +424,12 @@ void PPU_clock(void)
 			
 			// check if current pixel contains a sprite
 			if (ppu.LCDC.bits.sprites_enabled && ppu.fetcher_state != FETCHER_STATE_SPRITES)  // TODO: sprites same x
-			{
 				for (int i = ppu.current_sprite; i < ppu.scanline_sprite_count; i++)  // sprites are sorted by ascending x-coordinate
 					if (ppu.current_pixel >= ppu.scanline_sprites[i].x - 8 && ppu.current_pixel < ppu.scanline_sprites[i].x - 8 + 8)
 					{
-						ppu.pixel_FIFO_stop = 1;  // stop pixel FIFO while fetching current_sprite tile data
+						ppu.pixel_FIFO_stop = 1;  // stop pixel FIFO while fetching current sprite tile data
 
+						ppu.saved_state = ppu.fetcher_state;
 						ppu.saved_substate = ppu.fetcher_substate;                // save fetcher's state
 
 						ppu.fetcher_state = FETCHER_STATE_SPRITES;                // fetch current_sprite tile - restart fetcher
@@ -436,6 +437,33 @@ void PPU_clock(void)
 
 						break;
 					}
+
+			// check if window starts
+			if (ppu.LCDC.bits.window_enable && ppu.fetcher_state != FETCHER_STATE_SPRITES && ppu.fetcher_state != FETCHER_STATE_WINDOW)
+			{
+				if (ppu.LY >= ppu.WY && ppu.current_pixel >= ppu.WX - 8)
+				{
+					// fetch first tile address
+
+					//uint16_t tile_map_base = ppu.LCDC.bits.window_tile_map ? BG_TILE_MAP1_ADDRESS_BASE : BG_TILE_MAP0_ADDRESS_BASE;
+					//uint8_t tileX = ppu.SCX / 8 % 32;
+					//uint8_t tileY = (ppu.LY + ppu.SCY) / 8 % 32;
+					//ppu.tile_map_address = tile_map_base + tileX + tileY * 32;
+
+					uint8_t tileX = 0;                                // 0 coarse x - window always starts at upper left corner
+					uint8_t tileY = (ppu.LY - ppu.WY) >> 3 & 0x1F;    // coarse y
+					ppu.tile_map_address = 0x9800 | ppu.LCDC.bits.window_tile_map << 10 | tileY << 5 | tileX;  // tile address: 1001.1NYY.YYYX.XXXX
+
+					ppu.fetcher_state = FETCHER_STATE_WINDOW;   // fetch window tile - restart fetcher
+					ppu.fetcher_substate = FETCHER_STATE_BEFORE_FETCH_TILE;
+
+					ppu.background_shift_register_low = 0x00;  // discard fetched pixels
+					ppu.background_shift_register_high = 0x00;
+
+					ppu.pixel_FIFO_stop = 1;
+					ppu.pixel_FIFO_shift = 8;
+					ppu.pixel_FIFO_empty = 1;
+				}
 			}
 
 			/**** fetcher ****/
@@ -452,10 +480,10 @@ void PPU_clock(void)
 								break;
 
 							case FETCHER_STATE_FETCH_TILE:  
-								ppu.tile_number = VRAM[ppu.background_tile_map_address & 0x1FFF];
+								ppu.tile_number = VRAM[ppu.tile_map_address & 0x1FFF];
 
-								uint16_t next_address = ppu.background_tile_map_address + 1 & 0x001F;
-								ppu.background_tile_map_address = ppu.background_tile_map_address & 0xFFE0 | next_address;
+								uint16_t next_address = ppu.tile_map_address + 1 & 0x001F;
+								ppu.tile_map_address = ppu.tile_map_address & 0xFFE0 | next_address;
 
 								ppu.fetcher_substate = FETCHER_STATE_BEFORE_READ_TILE_LOW;
 
@@ -490,6 +518,77 @@ void PPU_clock(void)
 								break;
 
 							case FETCHER_STATE_READ_TILE_HIGH:  
+								ppu.tile_data_high = VRAM[ppu.tile_data_address + 1 & 0x1FFF];
+
+								ppu.fetcher_substate = FETCHER_STATE_PUSH_TO_FIFO;
+
+								break;
+
+							case FETCHER_STATE_PUSH_TO_FIFO:
+								if (ppu.pixel_FIFO_empty)
+								{
+									ppu.background_shift_register_low = ppu.tile_data_low;
+									ppu.background_shift_register_high = ppu.tile_data_high;
+
+									ppu.pixel_FIFO_empty = 0;
+									ppu.pixel_FIFO_stop = 0;
+
+									ppu.fetcher_substate = FETCHER_STATE_BEFORE_FETCH_TILE;
+								}
+
+								break;
+						}
+
+						break;
+
+					case FETCHER_STATE_WINDOW:  // fetching window tile
+
+						switch (ppu.fetcher_substate)
+						{
+							case FETCHER_STATE_BEFORE_FETCH_TILE:
+								ppu.fetcher_substate = FETCHER_STATE_FETCH_TILE;
+
+								break;
+
+							case FETCHER_STATE_FETCH_TILE:
+								ppu.tile_number = VRAM[ppu.tile_map_address & 0x1FFF];
+
+								uint16_t next_address = ppu.tile_map_address + 1 & 0x001F;
+								ppu.tile_map_address = ppu.tile_map_address & 0xFFE0 | next_address;
+
+								ppu.fetcher_substate = FETCHER_STATE_BEFORE_READ_TILE_LOW;
+
+								break;
+
+							case FETCHER_STATE_BEFORE_READ_TILE_LOW:
+								ppu.fetcher_substate = FETCHER_STATE_READ_TILE_LOW;
+
+								break;
+
+							case FETCHER_STATE_READ_TILE_LOW:
+							{
+								uint16_t tile_data_base = ppu.LCDC.bits.BG_and_window_tileset ? BG_TILE_DATA0_ADDRESS_BASE : BG_TILE_DATA1_ADDRESS_BASE;
+
+								if (tile_data_base == BG_TILE_DATA0_ADDRESS_BASE)
+									ppu.tile_data_address = tile_data_base + ppu.tile_number * 16 + (ppu.LY - ppu.WY) % 8 * 2;
+								else    // tile_data_base == BG_TILE_DATA1_ADDRESS_BASE
+									if (ppu.tile_number & 0x80)
+										ppu.tile_data_address = tile_data_base + 0x0800 - (UINT8_MAX + 1 - ppu.tile_number) * 16 + (ppu.LY - ppu.WY) % 8 * 2;
+									else
+										ppu.tile_data_address = tile_data_base + 0x0800 + ppu.tile_number * 16 + (ppu.LY - ppu.WY) % 8 * 2;
+
+								ppu.tile_data_low = VRAM[ppu.tile_data_address & 0x1FFF];
+
+								ppu.fetcher_substate = FETCHER_STATE_BEFORE_READ_TILE_HIGH;
+							}
+							break;
+
+							case FETCHER_STATE_BEFORE_READ_TILE_HIGH:
+								ppu.fetcher_substate = FETCHER_STATE_READ_TILE_HIGH;
+
+								break;
+
+							case FETCHER_STATE_READ_TILE_HIGH:
 								ppu.tile_data_high = VRAM[ppu.tile_data_address + 1 & 0x1FFF];
 
 								ppu.fetcher_substate = FETCHER_STATE_PUSH_TO_FIFO;
@@ -670,8 +769,8 @@ void PPU_clock(void)
 								break;
 
 							case FETCHER_STATE_IDLE:
-								ppu.fetcher_state = FETCHER_STATE_BACKGROUND;  // restore fetcher's state
-								ppu.fetcher_substate = ppu.saved_substate;
+								ppu.fetcher_state = ppu.saved_state;        // restore fetcher's state
+								ppu.fetcher_substate = ppu.saved_substate;  // and substate (step)
 
 								ppu.pixel_FIFO_stop = 0;
 
