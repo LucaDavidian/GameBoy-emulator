@@ -7,7 +7,7 @@
 #define SAMPLING_FREQUENCY                                     44100
 #define CYCLES_PER_SAMPLE      (CLOCK_FREQUENCY / SAMPLING_FREQUENCY)    
 
-#define BUFFER_SIZE 4096 * 4
+#define BUFFER_SIZE 4096 * 6
 
 /**************************************** CHANNEL 1 - pulse square wave ****************************************/
 struct Channel1

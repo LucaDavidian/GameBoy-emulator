@@ -15,14 +15,7 @@ int main(int argc, char *argv[])
         printf("error initializing SDL: %s", SDL_GetError());
         return -1;
     }
-
-    //cartridge_load("Tetris");
-    //cartridge_load("Dr. Mario");
-    //cartridge_load("Kirby's Dream Land");
-    //cartridge_load("Super Mario Land");
-    //cartridge_load("DuckTales");
-    //cartridge_load("Tennis");
-    
+  
     /**** CPU test ROMs ****/
     //cartridge_load("Test ROMs/cpu_instrs/individual/cpu_instrs");                
     //cartridge_load("Test ROMs/cpu_instrs/individual/01-special");                 // OK
@@ -46,7 +39,19 @@ int main(int argc, char *argv[])
     //cartridge_load("Test ROMs/dmg_sound/rom_singles/01-registers");
 
     /**** PPU test ROM ****/
-    cartridge_load("Test ROMs/PPU/dmg-acid2");
+    //cartridge_load("Test ROMs/PPU/dmg-acid2");   // OK
+
+    //cartridge_load("Tetris");
+    //cartridge_load("Dr. Mario");
+    //cartridge_load("Kirby's Dream Land");
+    cartridge_load("Super Mario Land");
+    //cartridge_load("DuckTales");
+    //cartridge_load("Tennis");
+    //cartridge_load("Bubble Bobble");
+    //cartridge_load("F-1 Race");    
+    //cartridge_load("Super Mario Land 2 - 6 Golden Coins");
+    //cartridge_load("World Cup 98");
+    //cartridge_load("Legend of Zelda, The - Link's Awakening");
 
     /**** initialize emulator's systems ****/
     CPU_init(&cpu);
