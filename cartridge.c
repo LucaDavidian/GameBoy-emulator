@@ -54,19 +54,19 @@ int cartridge_load(const char *rom_name)
             cartridge->RAM = NULL;  
             break;
         case 1:   // 2 KB RAM (partial bank)
-            cartridge->RAM = (uint8_t*)malloc(cartridge->RAM, 2 * 1024);
+            cartridge->RAM = (uint8_t*)malloc(2 * 1024);
             break; 
         case 2:   // 8 KB RAM (1 bank)
-            cartridge->RAM = (uint8_t*)malloc(cartridge->RAM, 8 * 1024);
+            cartridge->RAM = (uint8_t*)malloc(8 * 1024);
             break;
         case 3:   // 32 KB RAM (4 banks)
-            cartridge->RAM = (uint8_t*)malloc(cartridge->RAM, 32 * 1024);
+            cartridge->RAM = (uint8_t*)malloc(32 * 1024);
             break;
         case 4:   // 128 KB RAM (16 banks)
-            cartridge->RAM = (uint8_t*)malloc(cartridge->RAM, 128 * 1024);
+            cartridge->RAM = (uint8_t*)malloc(128 * 1024);
             break;
         case 5:   // 64 KB RAM (8 banks)
-            cartridge->RAM = (uint8_t*)malloc(cartridge->RAM, 64 * 1024);
+            cartridge->RAM = (uint8_t*)malloc(64 * 1024);
             break;
     }
     
@@ -89,6 +89,8 @@ uint8_t cartridge_read(uint16_t address)
             break;
 
         case MBC1:
+        case MBC1_RAM:
+        case MBC1_RAM_BATTERY:
             if (address >= 0x0000 && address <= 0x3FFF)       // fixed 16 KB ROM bank
                 return cartridge->ROM[address];
             else if (address >= 0x4000 && address <= 0x7FFF)  // switchable 16 KB ROM bank 
@@ -123,6 +125,8 @@ void cartridge_write(uint16_t address, uint8_t data)
             break;
 
         case MBC1:  // max 2 MB ROM + 32 KB RAM
+        case MBC1_RAM:
+        case MBC1_RAM_BATTERY:
             if (address >= 0x0000 && address <= 0x1FFF)
             {
                 if ((data & 0x0F) == 0x0A)
@@ -142,7 +146,7 @@ void cartridge_write(uint16_t address, uint8_t data)
                 if (banking_mode == ROM_BANKING_MODE)
                     ROM_bank = ROM_bank & 0x1F | (data & 0x03) << 5;     // high 2 bits of ROM bank number
                 else  // RAM_BANKING_MODE
-                    RAM_bank = data & 0x03;                    
+                    RAM_bank = data & 0x03;
             }
             else if (address >= 0x6000 && address <= 0x7FFF)
             {
