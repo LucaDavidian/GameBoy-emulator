@@ -149,7 +149,7 @@ void bus_write(uint16_t address, uint8_t data)
     else if (address >= 0x8000 && address <= 0x9FFF)        ////////////// VRAM - 8KB
         write_VRAM(address, data);
     else if (address >= 0xA000 && address <= 0xBFFF)        ////////////// external RAM - 8KB
-        ;
+        cartridge_write(address, data);
     else if (address >= 0xC000 && address <= 0xDFFF)        ////////////// work RAM - 8KB
         WRAM[address & 0x1FFF] = data;
     else if (address >= 0xE000 && address <= 0xFFFF)

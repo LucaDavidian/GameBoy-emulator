@@ -44,14 +44,14 @@ int main(int argc, char *argv[])
     //cartridge_load("Tetris");
     //cartridge_load("Dr. Mario");
     //cartridge_load("Kirby's Dream Land");
-    cartridge_load("Super Mario Land");
+    //cartridge_load("Super Mario Land");
     //cartridge_load("DuckTales");
     //cartridge_load("Tennis");
     //cartridge_load("Bubble Bobble");
     //cartridge_load("F-1 Race");    
     //cartridge_load("Super Mario Land 2 - 6 Golden Coins");
     //cartridge_load("World Cup 98");
-    //cartridge_load("Legend of Zelda, The - Link's Awakening");
+    cartridge_load("Legend of Zelda, The - Link's Awakening");
 
     /**** initialize emulator's systems ****/
     CPU_init(&cpu);

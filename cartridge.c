@@ -75,7 +75,7 @@ int cartridge_load(const char *rom_name)
 
 // MBC1
 static uint8_t ROM_bank = 1;  
-static enum Banking_Mode { ROM_BANKING_MODE, RAM_BANKING_MODE } banking_mode;
+static enum Banking_Mode { ROM_BANKING_MODE, RAM_BANKING_MODE } banking_mode = ROM_BANKING_MODE;
 static int RAM_enabled = 0;
 static uint8_t RAM_bank = 0;
 
@@ -89,13 +89,15 @@ uint8_t cartridge_read(uint16_t address)
             break;
 
         case MBC1:
-            if (address >= 0x0000 && address <= 0x3FFF)
+            if (address >= 0x0000 && address <= 0x3FFF)       // fixed 16 KB ROM bank
                 return cartridge->ROM[address];
-            else
+            else if (address >= 0x4000 && address <= 0x7FFF)  // switchable 16 KB ROM bank 
             {
                 uint32_t ROM_bank_address = ROM_bank * 0x4000;
                 return cartridge->ROM[ROM_bank_address + (address & 0x3FFF)];
             }
+            else if (address >= 0xA000 && address <= 0xBFFF)  // external RAM
+                return cartridge->RAM[address & 0x1FFF];
 
             break;
 
@@ -149,6 +151,8 @@ void cartridge_write(uint16_t address, uint8_t data)
                 else
                     banking_mode = RAM_BANKING_MODE;
             }
+            else if (address >= 0xA000 && address <= 0xBFFF)  // external RAM
+                cartridge->RAM[address & 0x1FFF] = data;
 
             break;
 
@@ -158,7 +162,9 @@ void cartridge_write(uint16_t address, uint8_t data)
                 if ((address & 0x0100) == 0)
                 {
                     if (data == 0x0A)
-                        ; // enable RAM
+                        RAM_enabled = 1; 
+                    else
+                        RAM_enabled = 0;
                 }
                 else // select ROM bank
                     if (data == 0)
