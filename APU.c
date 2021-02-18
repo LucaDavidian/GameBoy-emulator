@@ -7,7 +7,7 @@
 #define SAMPLING_FREQUENCY                                     44100
 #define CYCLES_PER_SAMPLE      (CLOCK_FREQUENCY / SAMPLING_FREQUENCY)    
 
-#define BUFFER_SIZE 4096 * 6
+#define BUFFER_SIZE 1024
 
 /**************************************** CHANNEL 1 - pulse square wave ****************************************/
 struct Channel1
@@ -349,8 +349,20 @@ struct APU
 
 static APU apu;
 static SDL_AudioDeviceID audio_device;
-static uint8_t audio_buffer[BUFFER_SIZE];
-static int audio_buffer_index = 0;
+
+extern void clock(void);
+
+void audio_callback(void *userdata, uint8_t *stream, int len)
+{
+	for (int i = 0; i < BUFFER_SIZE; i += 2)
+	{
+		for (int j = 0; j < CYCLES_PER_SAMPLE; j += 4)
+			clock(); // @ 1.048576 MHz
+		
+		stream[i] = (apu.SO1_output + 32.0) / 64.0 * 255;
+		stream[i + 1] = (apu.SO2_output + 32.0) / 64.0 * 255;
+	}
+}
 
 void APU_init(void)
 {
@@ -363,7 +375,7 @@ void APU_init(void)
 	audio_settings.freq = SAMPLING_FREQUENCY;
 	audio_settings.channels = 2;  // stereo
  	audio_settings.samples = BUFFER_SIZE / 2;
-	audio_settings.callback = NULL;
+	audio_settings.callback = audio_callback;
 	audio_settings.userdata = NULL;
 	//audio_settings.size;      // calculated
 	//audio_settings.silence;   // calculated
@@ -679,23 +691,6 @@ void APU_clock(void)
 		apu.SO2_output += apu.channel4.DAC;
 
 	apu.SO2_output *= apu.channel_control_on_off_volume.bits.S02_output_level + 1;
-
-	// sample DACs
-	if (apu.clock_cycles % CYCLES_PER_SAMPLE == 0)
-	{
-		audio_buffer[audio_buffer_index++] = (apu.SO1_output + 32.0) / 64.0 * 255;
-		audio_buffer[audio_buffer_index++] = (apu.SO2_output + 32.0) / 64.0 * 255;
-
-		if (audio_buffer_index == BUFFER_SIZE)
-		{
-			SDL_QueueAudio(audio_device, audio_buffer, BUFFER_SIZE);
-
-			audio_buffer_index = 0;
-
-			while (SDL_GetQueuedAudioSize(audio_device))
-				;
-		}
-	}
 
 	apu.clock_cycles++;
 }

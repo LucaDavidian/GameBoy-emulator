@@ -54,7 +54,7 @@ int main(int argc, char *argv[])
     cartridge_load("Legend of Zelda, The - Link's Awakening");
 
     /**** initialize emulator's systems ****/
-    CPU_init(&cpu);
+    CPU_init();
     PPU_init();
     APU_init();
     timer_init();
@@ -68,8 +68,6 @@ int main(int argc, char *argv[])
         while (SDL_PollEvent(&event))
             if (event.type == SDL_QUIT)
                 running = 0;
-
-        clock();
     }
     
     APU_deinit();
@@ -85,7 +83,7 @@ void clock(void)
     if (DMA_active)
         DMA_copy();
 
-    CPU_execute_machine_cycle(&cpu);
+    CPU_execute_machine_cycle();
 
     timer_clock();
 

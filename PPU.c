@@ -285,13 +285,13 @@ void PPU_init(void)
 	}
 
 	// initialize PPU
-	ppu.LY = 0x00;
-
+	ppu.state = PPU_STATE_VBLANK;
+	ppu.LY = DISPLAY_HEIGHT;
 	ppu.cycle = 0;
 
-	ppu.state = PPU_STATE_VBLANK;
+	ppu.pixel_FIFO_stop = 1;
 
-	ppu.pixel_FIFO_stop = 0;
+	ppu.STAT.bits.mode0_HBLANK_interrupt = 1;
 }
 
 void PPU_deinit(void)
@@ -313,7 +313,7 @@ void PPU_clock(void)
 		case PPU_STATE_OAM_SEARCH:  //////////////////////////////////////////////// MODE 2: OAM memory search (80 clock cycles)
 			if (ppu.cycle == 0)
 			{
-				ppu.STAT.bits.mode_flag = ppu.STAT.bits.mode_flag & ~STAT_MODE_BITS | SCREEN_MODE2;
+				ppu.STAT.bits.mode_flag = SCREEN_MODE2;
 
 				if (ppu.STAT.bits.mode2_OAM_interrupt)
 					set_int_flag(INT_LCD_STAT);
@@ -394,7 +394,7 @@ void PPU_clock(void)
 		case PPU_STATE_PIXEL_TRANSFER:  //////////////////////////////////////////////// MODE 3: pixel transfer
 			if (ppu.cycle == OAM_CLOCKS)
 			{
-				ppu.STAT.bits.mode_flag = ppu.STAT.bits.mode_flag & ~STAT_MODE_BITS | SCREEN_MODE3;
+				ppu.STAT.bits.mode_flag = SCREEN_MODE3;
 
 				// fetch first tile address
 
@@ -874,7 +874,7 @@ void PPU_clock(void)
 		case PPU_STATE_HBLANK:  //////////////////////////////////////////////// MODE 0: HBLANK
 			if ((ppu.STAT.bits.mode_flag & STAT_MODE_BITS) != SCREEN_MODE0)
 			{
-				ppu.STAT.bits.mode_flag = ppu.STAT.bits.mode_flag & ~STAT_MODE_BITS | SCREEN_MODE0;
+				ppu.STAT.bits.mode_flag = SCREEN_MODE0;
 
 				if (ppu.STAT.bits.mode0_HBLANK_interrupt)
 					set_int_flag(INT_LCD_STAT);
@@ -908,7 +908,7 @@ void PPU_clock(void)
 		case PPU_STATE_VBLANK:  //////////////////////////////////////////////// MODE 1: VBLANK
 			if (ppu.LY == DISPLAY_HEIGHT && ppu.cycle == 0)
 			{
-				ppu.STAT.bits.mode_flag = ppu.STAT.bits.mode_flag & ~STAT_MODE_BITS | SCREEN_MODE1;
+				ppu.STAT.bits.mode_flag = SCREEN_MODE1;
 
 				set_int_flag(INT_VBLANK);
 
@@ -932,6 +932,12 @@ void PPU_clock(void)
 				ppu.LY++;
 				ppu.cycle = 0;
 
+				if (ppu.LY == 153)
+				{
+					ppu.LY = 0;
+					ppu.state = PPU_STATE_OAM_SEARCH;
+				}
+
 				if (ppu.LY == ppu.LYC)
 				{
 					ppu.STAT.bits.coincidence_flag = 1;
@@ -941,12 +947,6 @@ void PPU_clock(void)
 				}
 				else
 					ppu.STAT.bits.coincidence_flag = 0;
-
-				if (ppu.LY > 153)
-				{
-					ppu.LY = 0;
-					ppu.state = PPU_STATE_OAM_SEARCH;
-				}
 			}
 
 			break;
